@@ -1,5 +1,5 @@
 import { DashboardView } from './DashboardView';
-import { getClosingSoon, getLatest } from '@/lib/tenders';
+import { getLatest, listTenders } from '@/lib/tenders';
 
 /**
  * Server component: fetches live tenders on the server so the API key never
@@ -9,16 +9,20 @@ export const revalidate = 300;
 
 export default async function DashboardPage() {
   // Parallel — these are independent upstream calls.
-  const [latest, closing] = await Promise.all([getLatest(8), getClosingSoon(6)]);
+  const [allOpen, closingPage, latest] = await Promise.all([
+    listTenders({ limit: 1 }),
+    listTenders({ closingWithin: '7d', limit: 6 }),
+    getLatest(8),
+  ]);
 
   const source = latest.source;
   return (
     <DashboardView
       latest={latest.results}
-      closingSoon={closing.results}
+      closingSoon={closingPage.results}
       stats={{
-        newThisWeek: latest.total,
-        closingSoon: closing.total,
+        newThisWeek: allOpen.total > 0 ? allOpen.total : latest.results.length,
+        closingSoon: closingPage.total > 0 ? closingPage.total : closingPage.results.length,
         saved: 0,
       }}
       source={source}

@@ -67,7 +67,9 @@ export function SearchView({
     for (const [k, v] of Object.entries(patch)) {
       v ? next.set(k, v) : next.delete(k);
     }
-    next.delete('page');
+    if (!('page' in patch)) {
+      next.delete('page');
+    }
     startTransition(() => router.replace(`/search?${next}`, { scroll: false }));
   };
 
