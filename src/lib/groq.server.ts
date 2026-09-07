@@ -12,11 +12,10 @@ export function getGroqModel(): string {
   if (!env) return 'llama-3.1-8b-instant';
   const valid = [
     'llama-3.1-8b-instant',
-    'llama3-70b-8192',
-    'llama3-8b-8192',
     'mixtral-8x7b-32768',
     'gemma2-9b-it',
-    'llama-3.3-70b-versatile',
+    'llama-3.2-11b-vision-preview',
+    'llama-3.2-3b-preview',
   ];
   if (valid.includes(env)) return env;
   return 'llama-3.1-8b-instant';
@@ -26,9 +25,9 @@ export const GROQ_MODEL = getGroqModel();
 
 const GROQ_FALLBACK_MODELS = [
   'llama-3.1-8b-instant',
-  'llama3-70b-8192',
   'mixtral-8x7b-32768',
   'gemma2-9b-it',
+  'llama-3.2-11b-vision-preview',
 ];
 
 const getApiKey = (): string => process.env.GROQ_API_KEY?.trim() ?? '';
@@ -114,8 +113,13 @@ export async function generateGroqJson<T>(opts: {
     }
 
     lastError = new GroqError(res.status, msg);
-    if (res.status === 404) {
-      continue; // Model not found on Groq — try next fallback model
+
+    // If model is decommissioned or not found, try the next active fallback model
+    if (
+      res.status === 404 ||
+      (res.status === 400 && /decommissioned|not found|not supported|does not exist/i.test(msg))
+    ) {
+      continue;
     }
     break;
   }
