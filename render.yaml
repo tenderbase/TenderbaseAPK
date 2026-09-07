@@ -1,0 +1,42 @@
+# Render Blueprint — deploy this file's service via:
+# render.com → New → Blueprint → pick this repo & branch
+#
+# Secrets are entered in the Render dashboard at create time (never committed).
+services:
+  - type: web
+    name: tenderbase-web
+    runtime: node
+    plan: free # change to a paid plan (e.g. starter) in the dashboard to avoid 15-min sleep
+    region: oregon # nearest decent region to users; any region works
+    buildCommand: npm run build
+    startCommand: npm start # start script already honours Render's $PORT
+    healthCheckPath: /login # "/" 307-redirects for signed-out users; /login returns 200
+    autoDeploy: true
+    envVars:
+      # --- Tender API (upstream on Render free tier; the app's 45s timeout +
+      # "waking up" fallback handles its cold starts) ---
+      - key: TENDERBASE_API_URL
+        value: https://tenderbase-api.onrender.com/api/v1
+      - key: TENDERBASE_API_KEY
+        sync: false
+        required: true
+      - key: TENDERBASE_ADMIN_SECRET
+        sync: false
+        required: false
+      # --- Google Gemini (server-side AI; free tier ~20 req/day, results are
+      # cached on the service's local disk until the next redeploy) ---
+      - key: GEMINI_API_KEY
+        sync: false
+        required: true
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      # --- Supabase (auth + saved tenders + preferences; anon key is safe
+      # to expose to the browser, constrained by RLS) ---
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+        required: true
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+        required: true
+      # NOTE: do NOT set NEXT_PUBLIC_DEV_AUTH_BYPASS — dev-gated, and the
+      # deployed app must use real Supabase auth.
