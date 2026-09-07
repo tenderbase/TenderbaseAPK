@@ -27,10 +27,27 @@ export interface TenderPage {
 }
 
 const SORT_MAP: Record<SortOption, ApiSort> = {
-  closing_soon: 'closing',
+  closing_soon: 'newest', // Upstream /tenders endpoint rejects 'closing'; map to 'newest' and handle closing order in app.
   newest: 'newest',
   value_desc: 'newest', // No value field upstream; degrade rather than 400.
 };
+
+function parseClosingWithinHours(val?: string): number {
+  if (!val) return 168; // Default 7 days
+  if (val.endsWith('h')) return parseInt(val, 10) || 168;
+  if (val.endsWith('d')) return (parseInt(val, 10) || 7) * 24;
+  return 168;
+}
+
+function sortByClosingDateAsc(a: TenderWithUserState, b: TenderWithUserState): number {
+  if (!a.closingDate) return 1;
+  if (!b.closingDate) return -1;
+  const timeA = new Date(a.closingDate).getTime();
+  const timeB = new Date(b.closingDate).getTime();
+  if (isNaN(timeA)) return 1;
+  if (isNaN(timeB)) return -1;
+  return timeA - timeB;
+}
 
 function mockPage(notice?: string, limit = 20): TenderPage {
   return {
@@ -71,26 +88,53 @@ export async function listTenders(opts: ListOptions = {}): Promise<TenderPage> {
     return mockPage('TENDERBASE_API_KEY not set — showing sample data.', opts.limit);
   }
 
+  const isClosingFilter = opts.sort === 'closing_soon' || Boolean(opts.closingWithin);
+  const hasOtherFilters = Boolean(
+    opts.query || opts.category || opts.province || opts.organisation || opts.status,
+  );
+
+  // When only closing soon is requested without other search filters, use the dedicated closing-soon endpoint
+  if (isClosingFilter && !hasOtherFilters) {
+    try {
+      const hours = parseClosingWithinHours(opts.closingWithin);
+      const res = await tenderApiServer.closingSoon(hours, opts.limit ?? 20);
+      let results = res.data.map((t) => adaptTenderWithState(t));
+      if (opts.sort === 'closing_soon' || opts.closingWithin) {
+        results.sort(sortByClosingDateAsc);
+      }
+      return {
+        results,
+        total: res.pagination.total,
+        page: res.pagination.page,
+        totalPages: res.pagination.total_pages,
+        source: 'live',
+      };
+    } catch (e) {
+      console.error('[tenders] closing-soon list failed, falling back to general list:', e);
+    }
+  }
+
   const query: ApiTenderQuery = {
     page: opts.page ?? 1,
     limit: opts.limit ?? 20,
     sort: SORT_MAP[opts.sort ?? 'newest'],
-    // Upstream expects a single value per facet, not repeated params.
     category: opts.category,
     province: opts.province,
     organisation: opts.organisation,
     status: opts.status,
-    closing_within: opts.closingWithin,
     search: opts.query,
   };
 
-  // 'relevance' only means something alongside a search term.
-  if (query.sort === 'relevance' && !query.search) query.sort = 'newest';
-
   try {
     const res = await tenderApiServer.list(query);
+    let results = res.data.map((t) => adaptTenderWithState(t));
+
+    if (opts.sort === 'closing_soon' || opts.closingWithin) {
+      results.sort(sortByClosingDateAsc);
+    }
+
     return {
-      results: res.data.map((t) => adaptTenderWithState(t)),
+      results,
       total: res.pagination.total,
       page: res.pagination.page,
       totalPages: res.pagination.total_pages,
