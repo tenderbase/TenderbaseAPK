@@ -41,7 +41,7 @@ Free Gemini key from https://aistudio.google.com/apikey, then in `.env.local`:
 
 ```bash
 GEMINI_API_KEY=your-key
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-1.5-flash
 ```
 
 Summaries and risk warnings are generated from each tender's real PDF.

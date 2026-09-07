@@ -62,7 +62,7 @@ Pre-filled by the Blueprint (override in **Environment** if wrong):
 - `TENDERBASE_API_URL=https://tenderbase-api.onrender.com/api/v1`
   (point it at the Railway `tenderbased-production` URL if the API lives
   there instead)
-- `GEMINI_MODEL=gemini-2.5-flash`
+- `GEMINI_MODEL=gemini-1.5-flash`
 
 **Do not set `NEXT_PUBLIC_DEV_AUTH_BYPASS`.** It is dev-gated and inert in
 production builds, but leave it out.

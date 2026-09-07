@@ -12,7 +12,7 @@ Get a free key at **https://aistudio.google.com/apikey**, then:
 ```bash
 # .env.local
 GEMINI_API_KEY=your-key
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-1.5-flash
 ```
 
 Never prefix it with `NEXT_PUBLIC_`. `src/lib/gemini.server.ts` imports

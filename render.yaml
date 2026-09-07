@@ -29,7 +29,7 @@ services:
         sync: false
         required: true
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-1.5-flash
       # --- Supabase (auth + saved tenders + preferences; anon key is safe
       # to expose to the browser, constrained by RLS) ---
       - key: NEXT_PUBLIC_SUPABASE_URL

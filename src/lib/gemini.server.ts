@@ -17,7 +17,7 @@ const BASE = 'https://generativelanguage.googleapis.com/v1beta';
  * 2.5 Pro is capped so low (single-digit RPM, tens of requests/day) that it is
  * unusable for anything but a manual test.
  */
-export const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+export const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
 
 const API_KEY = process.env.GEMINI_API_KEY ?? '';
 
