@@ -9,7 +9,7 @@ human are the Render dashboard (GitHub connection) and the secret values.
 
 ## Already done (in the repo)
 
-- `render.yaml` — Render Blueprint: Node runtime, `npm run build`,
+- `render.yaml` — Render Blueprint: Node runtime, `npm install && npm run build`,
   `npm start`, healthcheck `/login`, auto-deploy on push
 - `start` script honours Render's injected `$PORT`
   (`next start -H 0.0.0.0 -p ${PORT:-3000}`)
@@ -32,7 +32,7 @@ Log in at **render.com** (GitHub). Authorize access to
 `arena/01a07c2c-tenderbaseapk` (or `main` once merged).
 
 Render reads `render.yaml` and pre-fills: Node runtime, build
-`npm run build`, start `npm start`, healthcheck `/login`, auto-deploy.
+`npm install && npm run build`, start `npm start`, healthcheck `/login`, auto-deploy.
 
 <details>
 <summary>Prefer not to use a Blueprint?</summary>
@@ -40,7 +40,7 @@ Render reads `render.yaml` and pre-fills: Node runtime, build
 **New → Web Service** → same repo/branch. Render auto-detects Node from
 `package.json`; set manually what the Blueprint would have set:
 
-- Build Command: `npm run build`
+- Build Command: `npm install && npm run build`
 - Start Command: `npm start`
 - Health Check Path: `/login`
 - Instance: free (or a paid plan — see "Gotchas")
@@ -120,7 +120,7 @@ Any new Node/Next.js web service can reuse this exact shape:
 2. `start` script bound to `0.0.0.0` and `${PORT:-3000}`
 3. A stable **200** healthcheck endpoint that is *not* a redirect
 4. `render.yaml` entry: `type: web`, `runtime: node`,
-   `buildCommand: npm run build`, `startCommand: npm start`,
+   `buildCommand: npm install && npm run build`, `startCommand: npm start`,
    `healthCheckPath`, `autoDeploy: true`, secrets as `sync: false`
    `envVars`
 5. Secrets in the dashboard, public `NEXT_PUBLIC_*` vars in `envVars`
