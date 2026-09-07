@@ -89,12 +89,22 @@ function headers(): Record<string, string> {
  * the per-minute quota is hit, so transient failures are the normal case
  * rather than the exception. Retries use exponential backoff with jitter.
  */
+const FALLBACK_MODELS = [
+  'gemini-1.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash-latest',
+];
+
 export async function generateJson<T>(opts: GenerateOptions): Promise<T> {
   if (!isGeminiConfigured()) {
     throw new GeminiError(500, 'GEMINI_API_KEY is not set');
   }
 
-  const model = getGeminiModel();
+  const primaryModel = getGeminiModel();
+  const modelsToTry = [
+    primaryModel,
+    ...FALLBACK_MODELS.filter((m) => m !== primaryModel),
+  ];
 
   const body = {
     contents: [{ parts: opts.parts }],
@@ -109,79 +119,82 @@ export async function generateJson<T>(opts: GenerateOptions): Promise<T> {
     },
   };
 
-  const MAX_ATTEMPTS = 4;
   let lastError: GeminiError | null = null;
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    if (attempt > 0) {
-      const delay = Math.min(2 ** attempt * 1000, 8000) + Math.random() * 500;
-      await new Promise((r) => setTimeout(r, delay));
-    }
-
-    let res: Response;
-    try {
-      res = await fetch(`${BASE}/models/${model}:generateContent`, {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify(body),
-        cache: 'no-store',
-        signal: opts.signal ?? AbortSignal.timeout(120_000),
-      });
-    } catch (e) {
-      lastError = new GeminiError(504, 'Gemini request timed out', true);
-      continue;
-    }
-
-    if (res.ok) {
-      const json = (await res.json()) as {
-        candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
-      };
-      const candidate = json.candidates?.[0];
-      const text = candidate?.content?.parts?.[0]?.text;
-
-      if (!text) {
-        // MAX_TOKENS / SAFETY produce an empty candidate.
-        throw new GeminiError(
-          502,
-          `Gemini returned no content (finishReason: ${candidate?.finishReason ?? 'unknown'})`,
-        );
+  for (const model of modelsToTry) {
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (attempt > 0) {
+        const delay = Math.min(2 ** attempt * 1000, 6000) + Math.random() * 500;
+        await new Promise((r) => setTimeout(r, delay));
       }
+
+      let res: Response;
       try {
-        return JSON.parse(text) as T;
-      } catch {
-        throw new GeminiError(502, 'Gemini returned malformed JSON');
+        res = await fetch(`${BASE}/models/${model}:generateContent`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          signal: opts.signal ?? AbortSignal.timeout(120_000),
+        });
+      } catch (e) {
+        lastError = new GeminiError(504, 'Gemini request timed out', true);
+        continue;
       }
-    }
 
-    let message = `Gemini API ${res.status}`;
-    let dailyCap = false;
-    try {
-      const err = (await res.json()) as {
-        error?: {
-          message?: string;
-          details?: { violations?: { quotaId?: string }[] }[];
+      if (res.ok) {
+        const json = (await res.json()) as {
+          candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
         };
-      };
-      if (err.error?.message) message = err.error.message;
-      // Distinguish the per-DAY cap from the per-minute one. Retrying a daily
-      // cap is pointless and just burns time; per-minute is worth a backoff.
-      dailyCap = Boolean(
-        err.error?.details?.some((d) =>
-          d.violations?.some((v) => /PerDay/i.test(v.quotaId ?? '')),
-        ),
-      );
-    } catch {
-      /* non-JSON */
-    }
+        const candidate = json.candidates?.[0];
+        const text = candidate?.content?.parts?.[0]?.text;
 
-    if (res.status === 429 && dailyCap) {
-      throw new GeminiError(429, 'DAILY_QUOTA_EXCEEDED: ' + message, false);
-    }
+        if (!text) {
+          throw new GeminiError(
+            502,
+            `Gemini returned no content (finishReason: ${candidate?.finishReason ?? 'unknown'})`,
+          );
+        }
+        try {
+          return JSON.parse(text) as T;
+        } catch {
+          throw new GeminiError(502, 'Gemini returned malformed JSON');
+        }
+      }
 
-    // 429 (per-minute), 503 overloaded, 5xx transient — all worth retrying.
-    const retryable = res.status === 429 || res.status >= 500;
-    lastError = new GeminiError(res.status, message, retryable);
-    if (!retryable) throw lastError;
+      let message = `Gemini API ${res.status}`;
+      let dailyCap = false;
+      try {
+        const err = (await res.json()) as {
+          error?: {
+            message?: string;
+            details?: { violations?: { quotaId?: string }[] }[];
+          };
+        };
+        if (err.error?.message) message = err.error.message;
+        dailyCap = Boolean(
+          err.error?.details?.some((d) =>
+            d.violations?.some((v) => /PerDay/i.test(v.quotaId ?? '')),
+          ),
+        );
+      } catch {
+        /* non-JSON */
+      }
+
+      if (res.status === 429 && dailyCap) {
+        throw new GeminiError(429, 'DAILY_QUOTA_EXCEEDED: ' + message, false);
+      }
+
+      if (res.status === 404) {
+        lastError = new GeminiError(404, message, false);
+        break; // try next fallback model
+      }
+
+      const retryable = res.status === 429 || res.status >= 500;
+      lastError = new GeminiError(res.status, message, retryable);
+      if (!retryable) break;
+    }
   }
 
   throw lastError ?? new GeminiError(500, 'Gemini request failed');
