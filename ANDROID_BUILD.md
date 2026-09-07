@@ -45,7 +45,7 @@ export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 export ANDROID_HOME=/home/user/android-sdk
 export ANDROID_SDK_ROOT=$ANDROID_HOME
 
-cd ~/tenderbase-app
+cd ~/tenderbaseapk
 
 # Point the shell at your deployment, then sync
 TENDERBASE_APP_URL=https://your-app.vercel.app npx cap sync android

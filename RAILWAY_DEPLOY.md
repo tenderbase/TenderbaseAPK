@@ -32,7 +32,7 @@ export RAILWAY_TOKEN=<your-token>
 ### 2. Create the service
 
 ```bash
-cd ~/tenderbase-app
+cd ~/tenderbaseapk
 railway init            # name it e.g. tenderbase-web
 ```
 
@@ -70,7 +70,7 @@ railway domain          # generates the public URL
 ### 5. Point the APK at it
 
 ```bash
-cd ~/tenderbase-app
+cd ~/tenderbaseapk
 TENDERBASE_APP_URL=https://<your-domain> npx cap sync android
 cd android && ./gradlew assembleDebug --no-daemon
 ```

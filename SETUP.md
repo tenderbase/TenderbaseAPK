@@ -54,7 +54,7 @@ See `AI-INTEGRATION.md`.
 Download and unzip `tenderbase-source.zip`, then:
 
 ```bash
-cd tenderbase-app
+cd tenderbaseapk
 npm install
 ```
 
