@@ -53,7 +53,7 @@ Render reads `render.yaml` and pre-fills: Node runtime, build
 |---|---|---|
 | `TENDERBASE_API_KEY` | your tender API | yes |
 | `TENDERBASE_ADMIN_SECRET` | generate your own | no (admin/sync endpoints) |
-| `GEMINI_API_KEY` | aistudio.google.com/apikey | yes |
+| `GROQ_API_KEY` | console.groq.com/keys | yes |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API | yes |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API | yes |
 
@@ -62,7 +62,7 @@ Pre-filled by the Blueprint (override in **Environment** if wrong):
 - `TENDERBASE_API_URL=https://tenderbase-api.onrender.com/api/v1`
   (point it at the Railway `tenderbased-production` URL if the API lives
   there instead)
-- `GEMINI_MODEL=gemini-1.5-flash`
+- `GROQ_MODEL=llama-3.3-70b-versatile`
 
 **Do not set `NEXT_PUBLIC_DEV_AUTH_BYPASS`.** It is dev-gated and inert in
 production builds, but leave it out.

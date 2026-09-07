@@ -6,15 +6,8 @@ import path from 'node:path';
 /**
  * On-disk cache for AI results.
  *
- * The Gemini free tier on this project allows only **20 requests per day** for
- * gemini-2.5-flash (confirmed from the quota violation payload —
- * `GenerateRequestsPerDayPerProjectPerModel-FreeTier: 20`, well below the
- * numbers in Google's public docs). Without caching, ten page refreshes would
- * exhaust half a day's budget.
- *
- * Next's `revalidate` only caches the rendered route in memory and is lost on
- * restart, so results are persisted to disk keyed by tender id. Swap this for
- * Supabase or Redis in production — the interface is deliberately tiny.
+ * Prevents redundant LLM calls by persisting generated summaries to disk
+ * keyed by tender id. Swap this for Supabase or Redis in production.
  */
 
 const CACHE_DIR = path.join(process.cwd(), '.ai-cache');

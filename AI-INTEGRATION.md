@@ -1,23 +1,22 @@
-# Gemini AI Integration
+# GroqCloud AI Integration
 
-The AI screens are wired to **Google Gemini 2.5 Flash**, grounded in each
+The AI screens are wired to **GroqCloud (`llama-3.3-70b-versatile`)**, grounded in each
 tender's own PDF documents from eTenders.
 
 ---
 
 ## 1. Setup
 
-Get a free key at **https://aistudio.google.com/apikey**, then:
+Get a free key at **https://console.groq.com/keys**, then:
 
 ```bash
 # .env.local
-GEMINI_API_KEY=your-key
-GEMINI_MODEL=gemini-1.5-flash
+GROQ_API_KEY=your-key
+GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
-Never prefix it with `NEXT_PUBLIC_`. `src/lib/gemini.server.ts` imports
-`server-only`, so importing it from a client component is a **build error** —
-this actually caught a real mistake during development, when a view component
+Never prefix it with `NEXT_PUBLIC_`. `src/lib/groq.server.ts` imports
+`server-only`, so importing it from a client component is a **build error**.
 imported a type from the server module and pulled the key toward the bundle.
 The client-safe types now live in `src/types/ai.ts`.
 

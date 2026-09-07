@@ -6,7 +6,7 @@
  * server module (and the API key) into the browser bundle. Types only here.
  */
 
-export type AiSource = 'gemini' | 'groq' | 'mock' | 'unavailable';
+export type AiSource = 'groq' | 'mock' | 'unavailable';
 
 export interface AiCitationRef {
   index: number;

@@ -1,6 +1,6 @@
 import { Sparkles } from 'lucide-react';
 
-/** Shown while Gemini reads the tender PDF — this can take up to a minute. */
+/** Shown while GroqCloud reads the tender PDF — this can take up to a minute. */
 export default function Loading() {
   return (
     <main className="px-5 pt-16">

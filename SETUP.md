@@ -37,11 +37,11 @@ request after a pause can take ~25 seconds.
 
 ## 3. AI features (optional)
 
-Free Gemini key from https://aistudio.google.com/apikey, then in `.env.local`:
+Free Groq key from https://console.groq.com/keys, then in `.env.local`:
 
 ```bash
-GEMINI_API_KEY=your-key
-GEMINI_MODEL=gemini-1.5-flash
+GROQ_API_KEY=your-key
+GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
 Summaries and risk warnings are generated from each tender's real PDF.

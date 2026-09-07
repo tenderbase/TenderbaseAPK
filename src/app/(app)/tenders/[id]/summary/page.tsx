@@ -4,7 +4,7 @@ import { summariseTender } from '@/lib/ai';
 
 /**
  * Summaries are generated on demand and cached for an hour: a tender's
- * documents rarely change, and the Gemini free tier is rate-limited.
+ * documents rarely change, and the AI provider is cached.
  */
 export const revalidate = 3600;
 

@@ -23,15 +23,10 @@ services:
       - key: TENDERBASE_ADMIN_SECRET
         sync: false
         required: false
-      # --- Google Gemini or GroqCloud AI (server-side AI) ---
-      - key: GEMINI_API_KEY
-        sync: false
-        required: false
-      - key: GEMINI_MODEL
-        value: gemini-1.5-flash
+      # --- GroqCloud AI (server-side AI) ---
       - key: GROQ_API_KEY
         sync: false
-        required: false
+        required: true
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
       # --- Supabase (auth + saved tenders + preferences; anon key is safe

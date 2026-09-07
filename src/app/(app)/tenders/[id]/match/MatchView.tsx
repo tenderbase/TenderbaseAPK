@@ -95,7 +95,7 @@ export function MatchView({ match }: { match: AiMatchResult }) {
           </AiDisclaimer>
         </div>
 
-        {match.source === 'gemini' && (
+        {match.source === 'groq' && (
           <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-[11px] text-ink-3">
             <Sparkles size={11} strokeWidth={2} aria-hidden />
             Requirements extracted from the tender documents by {match.model}
