@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ChevronLeft, Share2, Bookmark, Building2,
-  FileText, ExternalLink, History, Download,
+  ChevronLeft, Share2, Bookmark, Building2, Sparkles,
+  FileText, History, Download,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { StatusBadge, CategoryBadge } from '@/components/ui/StatusBadge';
@@ -221,22 +221,10 @@ export function TenderDetailView({
 
       <div className="fixed inset-x-0 bottom-[76px] z-30 border-t border-line bg-white px-5 py-3 md:bottom-0 md:pl-[calc(15rem+1.25rem)]">
         <div className="mx-auto flex max-w-3xl gap-2.5 md:max-w-5xl">
-          {tender.sourceUrl ? (
-            <a
-              href={tender.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex h-12 flex-1 items-center justify-center gap-2 rounded-[12px] bg-navy text-body-lg font-semibold text-white shadow-primary"
-            >
-              <ExternalLink size={18} strokeWidth={2} aria-hidden />
-              View on eTenders
-            </a>
-          ) : (
-            <Button className="flex-1" disabled>
-              <FileText size={18} strokeWidth={2} aria-hidden />
-              No source link
-            </Button>
-          )}
+          <Button className="flex-1" disabled type="button">
+            <Sparkles size={18} strokeWidth={2} aria-hidden />
+            AI Summarise
+          </Button>
         </div>
       </div>
     </main>
