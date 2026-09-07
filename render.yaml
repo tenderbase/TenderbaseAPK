@@ -34,7 +34,7 @@ services:
         sync: false
         required: false
       - key: GROQ_MODEL
-        value: llama-3.3-70b-versatile
+        value: llama-3.1-8b-instant
       # --- Supabase Auth ---
       - key: NEXT_PUBLIC_SUPABASE_URL
         sync: false
