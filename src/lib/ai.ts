@@ -225,13 +225,9 @@ function geminiNotice(e: unknown): string {
         ? 'The daily Gemini free-tier quota is used up (resets at midnight Pacific).'
         : 'The AI service is rate-limited — try again in a minute.';
     }
-    if (e.status === 404) {
-      return 'AI service model not found (404). Ensure GEMINI_MODEL is set to gemini-1.5-flash.';
-    }
-    if (e.status >= 500) return 'The AI service is temporarily overloaded.';
-    return `AI service error (${e.status}).`;
+    return `AI service error (${e.status}): ${e.message}`;
   }
-  return 'The AI service could not be reached.';
+  return e instanceof Error ? e.message : 'The AI service could not be reached.';
 }
 
 // ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@ const BASE = 'https://generativelanguage.googleapis.com/v1beta';
  * 2.5 Pro is capped so low (single-digit RPM, tens of requests/day) that it is
  * unusable for anything but a manual test.
  */
-function resolveModel(): string {
+export function getGeminiModel(): string {
   const env = process.env.GEMINI_MODEL?.trim();
   if (!env) return 'gemini-1.5-flash';
   const valid = [
@@ -31,7 +31,7 @@ function resolveModel(): string {
   return 'gemini-1.5-flash';
 }
 
-export const GEMINI_MODEL = resolveModel();
+export const GEMINI_MODEL = getGeminiModel();
 
 const API_KEY = process.env.GEMINI_API_KEY ?? '';
 
@@ -94,6 +94,8 @@ export async function generateJson<T>(opts: GenerateOptions): Promise<T> {
     throw new GeminiError(500, 'GEMINI_API_KEY is not set');
   }
 
+  const model = getGeminiModel();
+
   const body = {
     contents: [{ parts: opts.parts }],
     ...(opts.system ? { systemInstruction: { parts: [{ text: opts.system }] } } : {}),
@@ -101,7 +103,9 @@ export async function generateJson<T>(opts: GenerateOptions): Promise<T> {
       responseMimeType: 'application/json',
       responseSchema: opts.schema,
       temperature: opts.temperature ?? 0.2,
-      thinkingConfig: { thinkingBudget: opts.thinkingBudget ?? 0 },
+      ...(opts.thinkingBudget && opts.thinkingBudget > 0
+        ? { thinkingConfig: { thinkingBudget: opts.thinkingBudget } }
+        : {}),
     },
   };
 
@@ -116,7 +120,7 @@ export async function generateJson<T>(opts: GenerateOptions): Promise<T> {
 
     let res: Response;
     try {
-      res = await fetch(`${BASE}/models/${GEMINI_MODEL}:generateContent`, {
+      res = await fetch(`${BASE}/models/${model}:generateContent`, {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify(body),
