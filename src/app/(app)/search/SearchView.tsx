@@ -105,6 +105,12 @@ export function SearchView({
           value={query}
           onChange={setQuery}
           onClear={() => setQuery('')}
+          onSubmit={(q) => {
+            const next = new URLSearchParams(params.toString());
+            q ? next.set('q', q) : next.delete('q');
+            next.delete('page');
+            startTransition(() => router.replace(`/search?${next}`, { scroll: false }));
+          }}
           placeholder="Search by keyword, organisation or tender number"
         />
 

@@ -10,25 +10,16 @@
 
 @layer base {
   html {
+    font-family: var(--font-inter);
     -webkit-tap-highlight-color: transparent;
   }
-  body {
-    @apply bg-canvas text-ink antialiased;
-    letter-spacing: -0.01em;
-    /* Capacitor: respect Android/iOS safe areas */
-    padding-top: env(safe-area-inset-top);
-  }
-  h1 { @apply text-h1 font-bold tracking-[-0.035em]; }
-  h2 { @apply text-h2 font-bold tracking-[-0.03em]; }
 }
 
-@layer components {
-  /* Scrollable chip rails hide their scrollbar on mobile. */
-  .no-scrollbar::-webkit-scrollbar { display: none; }
-  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-  /* Content sits above the fixed tab bar / beside the desktop sidebar. */
-  .app-scroll {
-    @apply pb-28 md:pb-8 md:pl-60;
-  }
+/* Scrollable chip rails hide their scrollbar on mobile. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
