@@ -23,16 +23,11 @@ services:
         required: true
       - key: TENDERBASE_ADMIN_SECRET
         sync: false
-        required: false
-      # --- AI Services (Gemini & GroqCloud) ---
-      - key: GEMINI_API_KEY
-        sync: false
-        required: false
-      - key: GEMINI_MODEL
-        value: gemini-1.5-flash
+        required: true
+      # --- AI Services (Gemini & GroqCloud) --
       - key: GROQ_API_KEY
         sync: false
-        required: false
+        required: true
       - key: GROQ_MODEL
         value: llama-3.1-8b-instant
       # --- Supabase Auth ---
