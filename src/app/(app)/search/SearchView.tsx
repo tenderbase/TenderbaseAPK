@@ -96,7 +96,7 @@ export function SearchView({
 
   return (
     <main>
-      <header className="border-b border-line bg-white px-5 pb-3.5 pt-2">
+      <header className="sticky top-0 z-30 border-b border-line bg-white px-5 pb-3.5 pt-2">
         <div className="mb-3 flex items-center gap-2.5">
           <MenuButton className="md:hidden" />
           <h1 className="text-h2">Find tenders</h1>
