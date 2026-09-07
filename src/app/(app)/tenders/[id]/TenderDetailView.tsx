@@ -1,15 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ChevronLeft, Share2, Bookmark, Building2, Sparkles, Target,
-  ChevronRight, FileText, ExternalLink, History, Download,
+  ChevronLeft, Share2, Bookmark, Building2,
+  FileText, ExternalLink, History, Download,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { StatusBadge, CategoryBadge } from '@/components/ui/StatusBadge';
-import { AiBadge } from '@/components/ai/AiBadge';
 import { Button } from '@/components/ui/Button';
 import { DataSourceNotice } from '@/components/ui/DataSourceNotice';
 import { formatValue, formatDate, daysUntil, getStatus, normaliseCase } from '@/lib/format';
@@ -128,8 +126,6 @@ export function TenderDetailView({
             <dd
               className={cn(
                 'mt-1 font-bold tracking-[-0.02em] text-white',
-                // eTenders never publishes a value, so this is almost always
-                // "Not disclosed" — shrink it so it stays on one line.
                 tender.valueCents === null ? 'text-[12.5px]' : 'text-[15px]',
               )}
             >
@@ -151,38 +147,6 @@ export function TenderDetailView({
             </div>
           ))}
         </dl>
-
-        <section className="mt-3.5 rounded-lg border border-ai-line bg-white p-3.5 shadow-card">
-          <div className="mb-2.5 flex items-center justify-between">
-            <AiBadge label="AI Summary" />
-            <span className="text-micro text-ink-3">
-              {tender.documents.length} {tender.documents.length === 1 ? 'document' : 'documents'}
-            </span>
-          </div>
-          <p className="text-[13.5px] leading-5 text-ink-2">
-            {tender.documents.length > 0
-              ? 'Generate a plain-language summary of the scope, requirements and deadlines, with citations back to the source documents.'
-              : 'No documents were published with this tender, so a summary cannot be generated.'}
-          </p>
-          {tender.documents.length > 0 && (
-            <div className="mt-3 flex items-center justify-between border-t border-line pt-2.5">
-              <Link
-                href={`/tenders/${tender.id}/summary`}
-                className="flex items-center gap-1.5 text-caption font-semibold text-ai"
-              >
-                Read full summary
-                <ChevronRight size={14} strokeWidth={2.3} aria-hidden />
-              </Link>
-              <Link
-                href={`/tenders/${tender.id}/match`}
-                className="flex items-center gap-1.5 text-caption font-semibold text-ai"
-              >
-                <Target size={13} strokeWidth={2.2} aria-hidden />
-                Check match
-              </Link>
-            </div>
-          )}
-        </section>
 
         {tender.description && (
           <section className="mt-4">
@@ -257,12 +221,6 @@ export function TenderDetailView({
 
       <div className="fixed inset-x-0 bottom-[76px] z-30 border-t border-line bg-white px-5 py-3 md:bottom-0 md:pl-[calc(15rem+1.25rem)]">
         <div className="mx-auto flex max-w-3xl gap-2.5 md:max-w-5xl">
-          {tender.documents.length > 0 && (
-            <Button variant="ai" fullWidth={false} className="w-[124px] shrink-0">
-              <Sparkles size={18} strokeWidth={2} aria-hidden />
-              Summarise
-            </Button>
-          )}
           {tender.sourceUrl ? (
             <a
               href={tender.sourceUrl}

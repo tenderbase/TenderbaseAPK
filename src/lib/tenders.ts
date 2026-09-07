@@ -30,7 +30,6 @@ const SORT_MAP: Record<SortOption, ApiSort> = {
   closing_soon: 'closing',
   newest: 'newest',
   value_desc: 'newest', // No value field upstream; degrade rather than 400.
-  ai_match: 'relevance',
 };
 
 function mockPage(notice?: string, limit = 20): TenderPage {

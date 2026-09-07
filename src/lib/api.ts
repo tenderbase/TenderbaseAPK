@@ -3,8 +3,6 @@ import type {
   SortOption,
   TenderFilters,
   TenderWithUserState,
-  TenderSummary,
-  MatchExplanation,
 } from '@/types/tender';
 
 /**
@@ -68,32 +66,5 @@ export const tenderApi = {
   /** Resolves a signed, time-limited document URL from the source system. */
   documentUrl(tenderId: string, documentId: string) {
     return request<{ url: string }>(`/tenders/${tenderId}/documents/${documentId}`);
-  },
-};
-
-export const aiApi = {
-  /** RAG over the tender's own documents. Always returns citations. */
-  summarise(tenderId: string) {
-    return request<TenderSummary>(`/ai/summary/${tenderId}`);
-  },
-
-  /** Transparent rubric scored against the user's company profile. */
-  explainMatch(tenderId: string) {
-    return request<MatchExplanation>(`/ai/match/${tenderId}`);
-  },
-
-  /** Parses plain language into real filters, which the UI shows and lets the user edit. */
-  parseQuery(query: string) {
-    return request<{ filters: TenderFilters }>('/ai/parse-query', {
-      method: 'POST',
-      body: JSON.stringify({ query }),
-    });
-  },
-
-  feedback(kind: 'summary' | 'match', tenderId: string, helpful: boolean) {
-    return request<{ ok: true }>('/ai/feedback', {
-      method: 'POST',
-      body: JSON.stringify({ kind, tenderId, helpful }),
-    });
   },
 };

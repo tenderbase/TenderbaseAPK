@@ -73,7 +73,6 @@ echo "Data-quality guarantees:"
 # The API exposes no monetary field — a fabricated amount would be a lie.
 # Node ICU renders "Sept"; we hardcode "Sep" so server and client agree.
 # The key must never reach the device (critical for the Capacitor APK).
-# Gemini key must never reach the browser either — matches AIza… and AQ.… formats.
 
 echo
 echo "Menu drawer:"
@@ -101,8 +100,6 @@ guarded  "Profile requires sign-in"       "/profile"
 guarded  "Company profile requires auth"  "/profile/company"
 guarded  "Preferences requires auth"      "/profile/preferences"
 guarded  "Tender detail requires auth"    "/tenders/877"
-guarded  "AI summary requires auth"       "/tenders/877/summary"
-guarded  "AI match requires auth"         "/tenders/877/match"
 guarded  "Briefing requires auth"         "/briefing"
 # A signed-out visitor must not even learn whether a tender exists; with the
 # bypass on, the genuine 404 is the correct answer.

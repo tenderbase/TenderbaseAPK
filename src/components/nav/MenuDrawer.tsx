@@ -41,7 +41,7 @@ const PRIMARY: Item[] = [
 ];
 
 const INTELLIGENCE: Item[] = [
-  { href: '/briefing', label: 'Weekly briefing', icon: Sparkles, sub: 'AI digest of new matches' },
+  { href: '/briefing', label: 'Weekly briefing', icon: Sparkles, sub: 'Digest of new matches' },
 ];
 
 const ACCOUNT: Item[] = [

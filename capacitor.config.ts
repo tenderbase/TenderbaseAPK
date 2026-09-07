@@ -9,7 +9,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
  *
  *   - The Next server keeps running, so `src/app/api/*` route handlers,
  *     `src/middleware.ts` and every `server-only` module still work.
- *   - TENDERBASE_API_KEY and GEMINI_API_KEY stay on the server and are NEVER
+ *   - TENDERBASE_API_KEY stays on the server and is NEVER
  *     shipped inside the APK. An APK is a zip file; anything bundled in it is
  *     extractable. This is the whole reason for choosing option A.
  *   - Shipping a fix = redeploying the web app. No new APK, no store review.

@@ -48,8 +48,6 @@ Set these on Railway, never in the repo:
 railway variables --set TENDERBASE_API_URL=https://tenderbased-production.up.railway.app/api/v1
 railway variables --set TENDERBASE_API_KEY=<key>
 railway variables --set TENDERBASE_ADMIN_SECRET=<secret>
-railway variables --set GEMINI_API_KEY=<key>
-railway variables --set GEMINI_MODEL=<model>
 railway variables --set NEXT_PUBLIC_SUPABASE_URL=<url>
 railway variables --set NEXT_PUBLIC_SUPABASE_ANON_KEY=<key>
 ```

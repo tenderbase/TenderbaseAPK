@@ -23,11 +23,10 @@ src/
 │  └─ (app)/                  authenticated shell (tab bar / sidebar)
 │     ├─ page.tsx             dashboard
 │     ├─ search/ saved/ alerts/ profile/ briefing/
-│     └─ tenders/[id]/        detail → summary · match
+│     └─ tenders/[id]/        detail
 ├─ components/
 │  ├─ ui/                     design-system primitives
 │  ├─ tender/                 TenderCard, CompactTenderCard
-│  ├─ ai/                     MatchBadge, Citation, AiBadge, AiDisclaimer
 │  └─ nav/                    BottomNavigation
 ├─ lib/                       cn · format · api · supabase · mock-data
 └─ types/tender.ts            the API contract
@@ -46,10 +45,6 @@ Colour communicates **status**, not decoration:
 | `open` (green) | accepting submissions |
 | `soon` (amber) | closing within 7 days |
 | `urgent` (red) | closing within 2 days / expired |
-| `ai` (indigo) | **AI-generated content only** — never a status |
-
-The indigo/status separation is load-bearing: a user must always be able to
-tell a generated score from a factual deadline.
 
 ### Status is derived, never stored
 
@@ -66,32 +61,11 @@ other or go stale in cache.
 - **`valueCents: number | null`** — integer cents avoids float rounding on
   currency; `null` means the organisation withheld the value (common in SA
   tenders) and renders as "Not disclosed", never "R0".
-- **`TenderWithUserState`** extends `Tender` with `isSaved` / `matchScore`, so
+- **`TenderWithUserState`** extends `Tender` with `isSaved`, so
   unauthenticated endpoints can return the base type safely.
-- **`matchScore: number | null`** — `null` when the user has AI disabled, which
-  makes every match badge disappear automatically.
 
 `lib/api.ts` calls Next route handlers under `/api/*` rather than the upstream
-API directly, keeping `TENDERBASE_API_KEY` and `AI_PROVIDER_API_KEY` off the
-device. Components currently read `lib/mock-data.ts`; swapping in `tenderApi`
-requires no prop changes.
-
----
-
-## AI principles
-
-Every AI feature is retrieval over data TenderBase already holds — tender
-documents, the user's company profile, saved history. No feature invents facts.
-
-1. **Citations are mandatory.** `TenderSummary.keyPoints[].citationIndex` maps
-   into `citations[]`, which resolves to a document and page range. The
-   "show sources" setting is locked on.
-2. **Match scores are a transparent rubric,** not a black box —
-   `MatchExplanation.factors[]` renders as the visible breakdown.
-3. **Smart search resolves to real filters** the user can see and edit, so it
-   degrades gracefully to the normal search API.
-4. **`<AiDisclaimer />` is a component,** so the wording can't drift between
-   screens.
+API directly, keeping `TENDERBASE_API_KEY` off the device. Components currently read `lib/mock-data.ts`; swapping in `tenderApi` requires no prop changes.
 
 ---
 

@@ -1,14 +1,13 @@
 'use client';
+
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, Target, Clock, TrendingUp, Building2, ChevronRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { AiBadge } from '@/components/ai/AiBadge';
-import { AiDisclaimer } from '@/components/ai/AiDisclaimer';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 
 const ITEMS: { icon: LucideIcon; tone: string; title: string; body: string; action: string }[] = [
-  { icon: Target, tone: 'bg-ai-bg text-ai', title: 'Your strongest match this week', body: 'Supply and Delivery of Computer Equipment (eThekwini Municipality) scored 94% — closing 12 September.', action: 'Open tender' },
+  { icon: Target, tone: 'bg-blue-soft text-blue', title: 'Top opportunity this week', body: 'Supply and Delivery of Computer Equipment (eThekwini Municipality) matches your IT preference — closing 12 September.', action: 'Open tender' },
   { icon: Clock, tone: 'bg-soon-bg text-soon', title: 'Act soon', body: 'Provision of Security Services closes in 2 days and is still on your saved list.', action: 'Review saved' },
   { icon: TrendingUp, tone: 'bg-blue-soft text-blue', title: 'Category trend', body: 'IT & Technology tenders in KZN rose 38% this week. Cleaning contracts stayed flat.', action: 'See all IT tenders' },
   { icon: Building2, tone: 'bg-open-bg text-open', title: 'New organisation for you', body: 'KZN Department of Education published its first tender matching your profile.', action: 'View organisation' },
@@ -26,13 +25,13 @@ export default function BriefingPage() {
       </header>
 
       <div className="px-5 pt-3.5">
-        <section className="rounded-lg border border-ai-line bg-white p-4 shadow-card">
+        <section className="rounded-lg border border-line bg-white p-4 shadow-card">
           <div className="mb-2.5 flex items-center justify-between">
-            <AiBadge label="AI Briefing" />
+            <span className="rounded-md bg-navy/10 px-2 py-0.5 text-micro font-semibold text-navy">Weekly Briefing</span>
             <span className="text-micro text-ink-3">Mon 31 Aug – Sun 6 Sep</span>
           </div>
           <p className="text-[14.5px] leading-[22px]">
-            <b>18 new tenders</b> matched your profile this week — up from 11 last week, driven mainly by municipal
+            <b>18 new tenders</b> matched your preferences this week — up from 11 last week, driven mainly by municipal
             IT procurement in KwaZulu-Natal.
           </p>
           <dl className="mt-3.5 flex gap-2.5">
@@ -73,12 +72,6 @@ export default function BriefingPage() {
           </p>
           <Button variant="secondary" size="sm" className="mt-3">Complete company profile</Button>
         </section>
-
-        <div className="mt-3.5">
-          <AiDisclaimer>
-            Briefings are generated weekly from tenders published on TenderBase and your saved activity.
-          </AiDisclaimer>
-        </div>
       </div>
     </main>
   );

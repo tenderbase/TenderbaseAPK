@@ -19,7 +19,7 @@ Four parts of the app need a running server:
 |---|---|
 | `src/app/api/*/route.ts` (4 handlers) | Server endpoints; nothing runs them on-device |
 | `src/middleware.ts` | Unsupported in static export |
-| `src/lib/*.server.ts` (`server-only`) | Holds `TENDERBASE_API_KEY`, `GEMINI_API_KEY` |
+| `src/lib/*.server.ts` (`server-only`) | Holds `TENDERBASE_API_KEY` |
 | `/tenders/[id]` | Would need every tender pre-rendered at build time |
 
 **The security point:** an APK is a zip file. Anything bundled inside it is
@@ -93,7 +93,6 @@ set these environment variables **on the host** (never in the repo):
 TENDERBASE_API_URL=https://tenderbased-production.up.railway.app/api/v1
 TENDERBASE_API_KEY=<key>
 TENDERBASE_ADMIN_SECRET=<secret>
-GEMINI_API_KEY=<key>
 NEXT_PUBLIC_SUPABASE_URL=<url>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<key>
 ```

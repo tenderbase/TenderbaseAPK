@@ -38,7 +38,6 @@ export function DashboardView({
   notice,
 }: DashboardViewProps) {
   const router = useRouter();
-  // Saved state is optimistic and local until the notifications API is wired in.
   const [saved, setSaved] = useState<Record<string, boolean>>({});
   const toggleSave = (id: string) => setSaved((p) => ({ ...p, [id]: !p[id] }));
   const withSaved = (t: TenderWithUserState) => ({ ...t, isSaved: saved[t.id] ?? t.isSaved });
@@ -92,18 +91,18 @@ export function DashboardView({
 
         <Link
           href="/briefing"
-          className="mt-3 flex items-center gap-2.5 rounded-[12px] bg-ai-bg px-3 py-2.5"
+          className="mt-3 flex items-center gap-2.5 rounded-[12px] bg-canvas px-3 py-2.5 border border-line"
         >
-          <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-white text-ai">
+          <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-white text-navy border border-line">
             <Sparkles size={16} strokeWidth={2.1} aria-hidden />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-meta font-semibold text-ai">Your weekly briefing is ready</span>
-            <span className="mt-px block text-[11.5px] text-ai/80">
+            <span className="block text-meta font-semibold text-navy">Your weekly briefing is ready</span>
+            <span className="mt-px block text-[11.5px] text-ink-2">
               {stats.newThisWeek.toLocaleString('en-ZA')} open · {stats.closingSoon} closing this week
             </span>
           </span>
-          <ChevronRight size={16} strokeWidth={2.3} className="text-ai" aria-hidden />
+          <ChevronRight size={16} strokeWidth={2.3} className="text-navy" aria-hidden />
         </Link>
 
         <div className="mt-4">

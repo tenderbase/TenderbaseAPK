@@ -81,51 +81,7 @@ export interface Tender {
 export interface TenderWithUserState extends Tender {
   isSaved: boolean;
   savedAt: string | null;
-  /** 0–100. Present only when AI matching is enabled for the user. */
   matchScore: number | null;
-}
-
-// ---------- AI ----------
-
-export interface AiCitation {
-  /** 1-based marker rendered in the summary text. */
-  index: number;
-  documentId: string;
-  documentName: string;
-  pageRange: string | null;
-}
-
-export interface TenderSummary {
-  tenderId: string;
-  overview: string;
-  keyPoints: { text: string; citationIndex: number | null }[];
-  citations: AiCitation[];
-  generatedAt: string;
-  model: string;
-}
-
-export type MatchFactorKey =
-  | 'category'
-  | 'province'
-  | 'value'
-  | 'compliance'
-  | 'timeToBid';
-
-export interface MatchFactor {
-  key: MatchFactorKey;
-  label: string;
-  /** 0–100 contribution score. */
-  score: number;
-  /** Short human explanation, e.g. 'Exact match'. */
-  note: string;
-}
-
-export interface MatchExplanation {
-  tenderId: string;
-  score: number;
-  factors: MatchFactor[];
-  /** Disqualification risks surfaced before bidding. */
-  warnings: { text: string; citationIndex: number | null }[];
 }
 
 // ---------- search ----------
@@ -145,12 +101,9 @@ export interface TenderFilters {
 export type SortOption =
   | 'closing_soon'
   | 'newest'
-  | 'value_desc'
-  | 'ai_match';
+  | 'value_desc';
 
 export interface SearchResponse {
   results: TenderWithUserState[];
   total: number;
-  /** Filters the AI parsed out of a natural-language query, for display. */
-  interpretedFilters?: TenderFilters;
 }

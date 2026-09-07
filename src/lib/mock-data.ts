@@ -41,7 +41,7 @@ export const MOCK_TENDERS: TenderWithUserState[] = [
     },
     isSaved: true,
     savedAt: daysFromNow(-2),
-    matchScore: 94,
+    matchScore: null,
   },
   {
     id: 'znq-2026-08421',
@@ -60,7 +60,7 @@ export const MOCK_TENDERS: TenderWithUserState[] = [
     contactInformation: null,
     isSaved: true,
     savedAt: daysFromNow(-5),
-    matchScore: 91,
+    matchScore: null,
   },
   {
     id: 'msu-sec-2026-117',
@@ -79,7 +79,7 @@ export const MOCK_TENDERS: TenderWithUserState[] = [
     contactInformation: null,
     isSaved: false,
     savedAt: null,
-    matchScore: 84,
+    matchScore: null,
   },
   {
     id: 'tnpa-2026-0934',
@@ -98,7 +98,7 @@ export const MOCK_TENDERS: TenderWithUserState[] = [
     contactInformation: null,
     isSaved: false,
     savedAt: null,
-    matchScore: 76,
+    matchScore: null,
   },
   {
     id: 'kzn-health-2026-442',
@@ -117,45 +117,8 @@ export const MOCK_TENDERS: TenderWithUserState[] = [
     contactInformation: null,
     isSaved: false,
     savedAt: null,
-    matchScore: 68,
+    matchScore: null,
   },
 ];
 
 export const MOCK_STATS = { newThisWeek: 42, closingSoon: 8, saved: 17 };
-
-export const MOCK_SUMMARY = {
-  tenderId: 'eth-it-2026-091',
-  overview:
-    'This tender seeks a supplier to deliver desktop computers, laptops and peripherals to municipal offices across eThekwini over a 12-month period.',
-  keyPoints: [
-    { text: 'Estimated contract value of R2.4 million, delivered in phased batches.', citationIndex: 1 },
-    { text: 'Compulsory briefing session held 4 September 2026 — attendance certificate required.', citationIndex: 3 },
-    { text: 'Minimum B-BBEE Level 4; preference points allocated on the 80/20 scoring system.', citationIndex: 2 },
-    { text: 'Delivery to 6 municipal sites within 30 days of purchase order.', citationIndex: 1 },
-  ],
-  citations: [
-    { index: 1, documentId: 'd1', documentName: 'Tender Specification Document', pageRange: 'Pages 3–7 · PDF' },
-    { index: 2, documentId: 'd3', documentName: 'SBD Forms (1, 4, 6.1, 9)', pageRange: 'Page 2 · PDF' },
-    { index: 3, documentId: 'd4', documentName: 'Addendum No. 1 — Briefing Minutes', pageRange: 'Page 1 · PDF' },
-  ],
-  generatedAt: new Date().toISOString(),
-  model: 'tenderbase-summary-v1',
-};
-
-export const MOCK_MATCH = {
-  tenderId: 'eth-it-2026-091',
-  score: 79,
-  factors: [
-    { key: 'category' as const, label: 'Category — IT & Technology', score: 100, note: 'Exact match' },
-    { key: 'province' as const, label: 'Province — KwaZulu-Natal', score: 100, note: 'Exact match' },
-    { key: 'value' as const, label: 'Value in your range', score: 88, note: 'R2.4M' },
-    { key: 'compliance' as const, label: 'Compliance readiness', score: 75, note: '3 of 4' },
-    { key: 'timeToBid' as const, label: 'Time to prepare bid', score: 45, note: '10 days' },
-  ],
-  warnings: [
-    {
-      text: 'The compulsory briefing was held on 4 September 2026. Confirm your attendance certificate is on file, otherwise the bid may be disqualified.',
-      citationIndex: 3,
-    },
-  ],
-};
