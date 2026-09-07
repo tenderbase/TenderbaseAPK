@@ -131,7 +131,7 @@ export async function generateJson<T>(opts: GenerateOptions): Promise<T> {
 
       let res: Response;
       try {
-        res = await fetch(`${BASE}/models/${model}:generateContent`, {
+        res = await fetch(`${BASE}/models/${model}:generateContent?key=${API_KEY}`, {
           method: 'POST',
           headers: headers(),
           body: JSON.stringify(body),
@@ -222,7 +222,7 @@ export async function uploadPdf(
 
   const size = bytes.byteLength;
 
-  const start = await fetch(`${BASE.replace('/v1beta', '')}/upload/v1beta/files`, {
+  const start = await fetch(`${BASE.replace('/v1beta', '')}/upload/v1beta/files?key=${API_KEY}`, {
     method: 'POST',
     headers: {
       ...headers(),
