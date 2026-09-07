@@ -16,7 +16,7 @@ services:
       # --- Tender API (upstream on Render free tier; the app's 45s timeout +
       # "waking up" fallback handles its cold starts) ---
       - key: TENDERBASE_API_URL
-        value: https://tenderbase-api.onrender.com/api/v1
+        value: https://tenderbased-production.up.railway.app/api/v1
       - key: TENDERBASE_API_KEY
         sync: false
         required: true
