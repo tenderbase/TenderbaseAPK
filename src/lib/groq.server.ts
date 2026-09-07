@@ -9,15 +9,13 @@ const BASE = 'https://api.groq.com/openai/v1';
 
 export function getGroqModel(): string {
   const env = process.env.GROQ_MODEL?.trim();
-  if (!env) return 'llama-3.1-8b-instant';
+  // Confirmed active production text models on Groq API
   const valid = [
     'llama-3.1-8b-instant',
     'mixtral-8x7b-32768',
     'gemma2-9b-it',
-    'llama-3.2-11b-vision-preview',
-    'llama-3.2-3b-preview',
   ];
-  if (valid.includes(env)) return env;
+  if (env && valid.includes(env)) return env;
   return 'llama-3.1-8b-instant';
 }
 
@@ -27,7 +25,6 @@ const GROQ_FALLBACK_MODELS = [
   'llama-3.1-8b-instant',
   'mixtral-8x7b-32768',
   'gemma2-9b-it',
-  'llama-3.2-11b-vision-preview',
 ];
 
 const getApiKey = (): string => process.env.GROQ_API_KEY?.trim() ?? '';
@@ -114,11 +111,8 @@ export async function generateGroqJson<T>(opts: {
 
     lastError = new GroqError(res.status, msg);
 
-    // If model is decommissioned or not found, try the next active fallback model
-    if (
-      res.status === 404 ||
-      (res.status === 400 && /decommissioned|not found|not supported|does not exist/i.test(msg))
-    ) {
+    // If 400 (decommissioned model) or 404 (not found), try next fallback model
+    if (res.status === 400 || res.status === 404) {
       continue;
     }
     break;

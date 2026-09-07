@@ -1,6 +1,6 @@
 # GroqCloud AI Integration
 
-The AI screens are wired to **GroqCloud (`llama-3.3-70b-versatile`)**, grounded in each
+The AI screens are wired to **GroqCloud (`llama-3.1-8b-instant`)**, grounded in each
 tender's own PDF documents from eTenders.
 
 ---
@@ -12,7 +12,7 @@ Get a free key at **https://console.groq.com/keys**, then:
 ```bash
 # .env.local
 GROQ_API_KEY=your-key
-GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MODEL=llama-3.1-8b-instant
 ```
 
 Never prefix it with `NEXT_PUBLIC_`. `src/lib/groq.server.ts` imports

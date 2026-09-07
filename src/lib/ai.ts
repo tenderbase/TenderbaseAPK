@@ -3,14 +3,14 @@ import 'server-only';
 import {
   generateJson,
   isGeminiConfigured,
-  GEMINI_MODEL,
+  getGeminiModel,
   GeminiError,
   type ResponseSchema,
 } from '@/lib/gemini.server';
 import {
   generateGroqJson,
   isGroqConfigured,
-  GROQ_MODEL,
+  getGroqModel,
   GroqError,
 } from '@/lib/groq.server';
 import {
@@ -104,8 +104,16 @@ Known metadata (do not contradict it):
     schema: SUMMARY_SCHEMA,
   });
 
+  const rawPoints = Array.isArray(data?.keyPoints) ? data.keyPoints : [];
+  const keyPoints = rawPoints
+    .map((p) => ({
+      text: String(p?.text ?? '').trim(),
+      page: typeof p?.page === 'number' ? p.page : parseInt(String(p?.page ?? 0), 10) || 0,
+    }))
+    .filter((p) => p.text.length > 0);
+
   const pageNumbers = [
-    ...new Set(data.keyPoints.map((p) => p.page).filter((p) => p > 0)),
+    ...new Set(keyPoints.map((p) => p.page).filter((p) => p > 0)),
   ].sort((a, b) => a - b);
 
   const citations = pageNumbers.map((page, i) => ({
@@ -116,14 +124,14 @@ Known metadata (do not contradict it):
   }));
 
   return {
-    overview: data.overview,
-    keyPoints: data.keyPoints.map((p) => ({
+    overview: typeof data?.overview === 'string' && data.overview.trim() ? data.overview.trim() : `${tender.title}, advertised by ${tender.organisation}.`,
+    keyPoints: keyPoints.map((p) => ({
       text: p.text,
       citationIndex: p.page > 0 ? pageNumbers.indexOf(p.page) + 1 : null,
     })),
     citations,
     generatedAt: new Date().toISOString(),
-    model: GEMINI_MODEL,
+    model: getGeminiModel(),
     source: 'gemini',
   };
 }
@@ -159,8 +167,16 @@ Known metadata:
     user: prompt,
   });
 
+  const rawPoints = Array.isArray(data?.keyPoints) ? data.keyPoints : [];
+  const keyPoints = rawPoints
+    .map((p) => ({
+      text: String(p?.text ?? '').trim(),
+      page: typeof p?.page === 'number' ? p.page : parseInt(String(p?.page ?? 0), 10) || 0,
+    }))
+    .filter((p) => p.text.length > 0);
+
   const pageNumbers = [
-    ...new Set(data.keyPoints.map((p) => p.page).filter((p) => p > 0)),
+    ...new Set(keyPoints.map((p) => p.page).filter((p) => p > 0)),
   ].sort((a, b) => a - b);
 
   const citations = pageNumbers.map((page, i) => ({
@@ -170,15 +186,22 @@ Known metadata:
     pageRange: `Page ${page} · ${doc.fileType}`,
   }));
 
+  const overview =
+    typeof data?.overview === 'string' && data.overview.trim()
+      ? data.overview.trim()
+      : tender.description
+        ? normaliseCase(tender.description).slice(0, 400)
+        : `${tender.title}, advertised by ${tender.organisation}.`;
+
   return {
-    overview: data.overview,
-    keyPoints: data.keyPoints.map((p) => ({
+    overview,
+    keyPoints: keyPoints.map((p) => ({
       text: p.text,
       citationIndex: p.page > 0 ? pageNumbers.indexOf(p.page) + 1 : null,
     })),
     citations,
     generatedAt: new Date().toISOString(),
-    model: GROQ_MODEL,
+    model: getGroqModel(),
     source: 'groq',
   };
 }
@@ -212,35 +235,37 @@ async function generateSummary(tenderId: string): Promise<AiSummaryResult> {
 
   const pages = await extractPdfPages(pdf);
 
-  if (isGeminiConfigured()) {
-    try {
-      return await generateGeminiSummary(tender, doc, pages);
-    } catch (e) {
-      console.error('[ai] gemini summary failed, checking groq fallback:', e);
-      if (isGroqConfigured()) {
-        try {
-          return await generateGroqSummary(tender, doc, pages);
-        } catch (groqErr) {
-          console.error('[ai] groq summary fallback also failed:', groqErr);
-        }
-      }
-      const notice =
-        e instanceof GeminiError
-          ? `Gemini API error (${e.status}): ${e.message}`
-          : 'Gemini service error.';
-      return metadataSummary(tender, notice);
-    }
-  }
-
+  // If Groq is configured, try Groq
   if (isGroqConfigured()) {
     try {
       return await generateGroqSummary(tender, doc, pages);
     } catch (e) {
       console.error('[ai] groq summary failed:', e);
+      if (isGeminiConfigured()) {
+        try {
+          return await generateGeminiSummary(tender, doc, pages);
+        } catch (geminiErr) {
+          console.error('[ai] gemini summary fallback also failed:', geminiErr);
+        }
+      }
       const notice =
         e instanceof GroqError
           ? `Groq API error (${e.status}): ${e.message}`
           : 'Groq service error.';
+      return metadataSummary(tender, notice);
+    }
+  }
+
+  // If Gemini is configured, try Gemini
+  if (isGeminiConfigured()) {
+    try {
+      return await generateGeminiSummary(tender, doc, pages);
+    } catch (e) {
+      console.error('[ai] gemini summary failed:', e);
+      const notice =
+        e instanceof GeminiError
+          ? `Gemini API error (${e.status}): ${e.message}`
+          : 'Gemini service error.';
       return metadataSummary(tender, notice);
     }
   }
@@ -274,7 +299,7 @@ function metadataSummary(tender: TenderWithUserState, why: string): AiSummaryRes
     keyPoints: points,
     citations: [],
     generatedAt: new Date().toISOString(),
-    model: isGeminiConfigured() ? GEMINI_MODEL : GROQ_MODEL,
+    model: isGroqConfigured() ? getGroqModel() : getGeminiModel(),
     source: 'unavailable',
     degraded: true,
     notice: `${why} This summary uses listing metadata only — open the tender documents before bidding.`,
@@ -370,46 +395,74 @@ async function computeMatch(
   let source: AiSource = 'unavailable';
 
   const doc = tender.documents.find((d) => /pdf/i.test(d.fileType));
-  if ((isGeminiConfigured() || isGroqConfigured()) && doc) {
+  if ((isGroqConfigured() || isGeminiConfigured()) && doc) {
     try {
       const pdf = await fetchPdf(doc.url);
       if (pdf) {
         const pages = await extractPdfPages(pdf);
         const contextText = buildPagedContext(pages, 60_000);
 
-        if (isGeminiConfigured()) {
-          const data = await generateJson<{ warnings: { text: string; page: number }[] }>({
-            system:
-              'You identify disqualification risks in South African tender documents. Report ONLY requirements stated in the document that a bidder could fail on: compulsory briefing attendance, CIDB grading, PSIRA registration, tax clearance, CSD registration, B-BBEE certificates, sureties, site inspections. Never invent requirements. Return an empty array if none are stated.',
-            parts: [
-              { text: contextText },
-              { text: 'List the mandatory requirements a bidder could be disqualified for missing.' },
-            ],
-            schema: {
-              type: 'OBJECT',
-              properties: {
-                warnings: {
-                  type: 'ARRAY',
-                  items: {
-                    type: 'OBJECT',
-                    properties: { text: { type: 'STRING' }, page: { type: 'INTEGER' } },
-                    required: ['text', 'page'],
+        let warningSuccess = false;
+
+        if (isGroqConfigured()) {
+          try {
+            const data = await generateGroqJson<{ warnings: { text: string; page: number }[] }>({
+              system:
+                'You identify disqualification risks in South African tender documents. Report ONLY requirements stated in the document that a bidder could fail on: compulsory briefing attendance, CIDB grading, PSIRA registration, tax clearance, CSD registration, B-BBEE certificates, sureties, site inspections. Never invent requirements. Return an empty array if none are stated.',
+              user: `List the mandatory requirements a bidder could be disqualified for missing. Return JSON object with schema {"warnings": [{"text": "requirement", "page": 1}]}.\n\nDocument text:\n${contextText}`,
+            });
+            const rawWarnings = Array.isArray(data?.warnings) ? data.warnings : [];
+            warnings = rawWarnings
+              .slice(0, 4)
+              .map((w) => ({
+                text: String(w?.text ?? '').trim(),
+                citationIndex: null,
+              }))
+              .filter((w) => w.text.length > 0);
+            source = 'groq';
+            warningSuccess = true;
+          } catch (groqErr) {
+            console.error('[ai] groq match warnings failed:', groqErr);
+          }
+        }
+
+        if (!warningSuccess && isGeminiConfigured()) {
+          try {
+            const data = await generateJson<{ warnings: { text: string; page: number }[] }>({
+              system:
+                'You identify disqualification risks in South African tender documents. Report ONLY requirements stated in the document that a bidder could fail on: compulsory briefing attendance, CIDB grading, PSIRA registration, tax clearance, CSD registration, B-BBEE certificates, sureties, site inspections. Never invent requirements. Return an empty array if none are stated.',
+              parts: [
+                { text: contextText },
+                { text: 'List the mandatory requirements a bidder could be disqualified for missing.' },
+              ],
+              schema: {
+                type: 'OBJECT',
+                properties: {
+                  warnings: {
+                    type: 'ARRAY',
+                    items: {
+                      type: 'OBJECT',
+                      properties: { text: { type: 'STRING' }, page: { type: 'INTEGER' } },
+                      required: ['text', 'page'],
+                    },
                   },
                 },
+                required: ['warnings'],
               },
-              required: ['warnings'],
-            },
-          });
-          warnings = data.warnings.slice(0, 4).map((w) => ({ text: w.text, citationIndex: null }));
-          source = 'gemini';
-        } else if (isGroqConfigured()) {
-          const data = await generateGroqJson<{ warnings: { text: string; page: number }[] }>({
-            system:
-              'You identify disqualification risks in South African tender documents. Report ONLY requirements stated in the document that a bidder could fail on: compulsory briefing attendance, CIDB grading, PSIRA registration, tax clearance, CSD registration, B-BBEE certificates, sureties, site inspections. Never invent requirements. Return an empty array if none are stated.',
-            user: `List the mandatory requirements a bidder could be disqualified for missing. Return JSON object with schema {"warnings": [{"text": "requirement", "page": 1}]}.\n\nDocument text:\n${contextText}`,
-          });
-          warnings = data.warnings.slice(0, 4).map((w) => ({ text: w.text, citationIndex: null }));
-          source = 'groq';
+            });
+            const rawWarnings = Array.isArray(data?.warnings) ? data.warnings : [];
+            warnings = rawWarnings
+              .slice(0, 4)
+              .map((w) => ({
+                text: String(w?.text ?? '').trim(),
+                citationIndex: null,
+              }))
+              .filter((w) => w.text.length > 0);
+            source = 'gemini';
+            warningSuccess = true;
+          } catch (geminiErr) {
+            console.error('[ai] gemini match warnings failed:', geminiErr);
+          }
         }
       }
     } catch (e) {
@@ -424,12 +477,21 @@ async function computeMatch(
     });
   }
 
+  const model =
+    source === 'groq'
+      ? getGroqModel()
+      : source === 'gemini'
+        ? getGeminiModel()
+        : isGroqConfigured()
+          ? getGroqModel()
+          : getGeminiModel();
+
   return {
     score,
     factors,
     warnings,
     source,
-    model: isGeminiConfigured() ? GEMINI_MODEL : GROQ_MODEL,
+    model,
   };
 }
 
