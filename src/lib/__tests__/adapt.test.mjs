@@ -35,6 +35,15 @@ function deriveTitle(t) {
   return raw || 'Untitled tender';
 }
 
+function deriveSourceUrl(t) {
+  const url = t.source_url?.trim();
+  if (!url) return 'https://www.etenders.gov.za/Home/opportunities';
+  if (/etenders\.gov\.za\/tender\b/i.test(url) || /\/tender\/\d+/i.test(url)) {
+    return 'https://www.etenders.gov.za/Home/opportunities';
+  }
+  return url;
+}
+
 test('reference-code titles are replaced by the description', () => {
   // Real record id=1066
   const t = {
@@ -71,4 +80,19 @@ test('empty description falls back to the code rather than crashing', () => {
 test('titles never exceed the card budget', () => {
   const long = 'A'.repeat(400);
   assert.ok(deriveTitle({ title: 'X1/26', description: long }).length <= 121);
+});
+
+test('broken etenders /tender/12345 URLs are replaced with the live opportunities portal', () => {
+  assert.equal(
+    deriveSourceUrl({ source_url: 'https://www.etenders.gov.za/tender/169382' }),
+    'https://www.etenders.gov.za/Home/opportunities'
+  );
+  assert.equal(
+    deriveSourceUrl({ source_url: null }),
+    'https://www.etenders.gov.za/Home/opportunities'
+  );
+  assert.equal(
+    deriveSourceUrl({ source_url: 'https://www.etenders.gov.za/Home/opportunities?id=1' }),
+    'https://www.etenders.gov.za/Home/opportunities?id=1'
+  );
 });

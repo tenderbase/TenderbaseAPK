@@ -211,6 +211,21 @@ export function adaptDocument(d: ApiDocument, index: number): TenderDocument {
   };
 }
 
+/**
+ * Fix broken eTenders URLs from upstream feeds (e.g. "https://www.etenders.gov.za/tender/169382").
+ * eTenders does not have a /tender/{id} route; the live opportunities portal is /Home/opportunities.
+ */
+export function deriveSourceUrl(t: Pick<ApiTender, 'source_url'>): string | null {
+  const url = t.source_url?.trim();
+  if (!url) return 'https://www.etenders.gov.za/Home/opportunities';
+
+  if (/etenders\.gov\.za\/tender\b/i.test(url) || /\/tender\/\d+/i.test(url)) {
+    return 'https://www.etenders.gov.za/Home/opportunities';
+  }
+
+  return url;
+}
+
 // ---------------------------------------------------------------------------
 // Main mappers
 // ---------------------------------------------------------------------------
@@ -232,7 +247,7 @@ export function adaptTender(t: ApiTender): Tender {
     valueCents: null,
     publishedDate: t.advertised_date ?? '',
     closingDate: deriveClosingDate(t) ?? '',
-    sourceUrl: t.source_url,
+    sourceUrl: deriveSourceUrl(t),
     documents: (t.documents ?? []).map(adaptDocument),
     contactInformation: null, // Not supplied by the eTenders OCDS feed.
   };
