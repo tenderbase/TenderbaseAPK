@@ -23,13 +23,17 @@ services:
       - key: TENDERBASE_ADMIN_SECRET
         sync: false
         required: false
-      # --- Google Gemini (server-side AI; free tier ~20 req/day, results are
-      # cached on the service's local disk until the next redeploy) ---
+      # --- Google Gemini or GroqCloud AI (server-side AI) ---
       - key: GEMINI_API_KEY
         sync: false
-        required: true
+        required: false
       - key: GEMINI_MODEL
         value: gemini-1.5-flash
+      - key: GROQ_API_KEY
+        sync: false
+        required: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
       # --- Supabase (auth + saved tenders + preferences; anon key is safe
       # to expose to the browser, constrained by RLS) ---
       - key: NEXT_PUBLIC_SUPABASE_URL
