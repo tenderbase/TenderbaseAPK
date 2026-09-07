@@ -38,9 +38,19 @@ export function DashboardView({
   notice,
 }: DashboardViewProps) {
   const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState('');
   const [saved, setSaved] = useState<Record<string, boolean>>({});
   const toggleSave = (id: string) => setSaved((p) => ({ ...p, [id]: !p[id] }));
   const withSaved = (t: TenderWithUserState) => ({ ...t, isSaved: saved[t.id] ?? t.isSaved });
+
+  const handleSearchSubmit = (q: string) => {
+    const trimmed = q.trim();
+    if (trimmed) {
+      router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+    } else {
+      router.push('/search');
+    }
+  };
 
   return (
     <main>
@@ -74,9 +84,21 @@ export function DashboardView({
           </div>
         </div>
 
-        <div className="mt-3.5">
-          <SearchBar readOnly placeholder="Search tenders..." onFocus={() => router.push('/search')} />
-        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSearchSubmit(searchQuery);
+          }}
+          className="mt-3.5"
+        >
+          <SearchBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            onClear={() => setSearchQuery('')}
+            onSubmit={handleSearchSubmit}
+            placeholder="Search by keyword, organisation or tender number"
+          />
+        </form>
       </header>
 
       <div className="px-5 pt-4">

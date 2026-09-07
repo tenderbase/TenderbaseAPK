@@ -8,6 +8,7 @@ export interface SearchBarProps {
   onChange?: (value: string) => void;
   onClear?: () => void;
   onFocus?: () => void;
+  onSubmit?: (value: string) => void;
   readOnly?: boolean;
   className?: string;
 }
@@ -18,6 +19,7 @@ export function SearchBar({
   onChange,
   onClear,
   onFocus,
+  onSubmit,
   readOnly,
   className,
 }: SearchBarProps) {
@@ -37,6 +39,12 @@ export function SearchBar({
         readOnly={readOnly}
         onFocus={onFocus}
         onChange={(e) => onChange?.(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && onSubmit) {
+            e.preventDefault();
+            onSubmit(value);
+          }
+        }}
         aria-label={placeholder}
         className="min-w-0 flex-1 bg-transparent text-[14.5px] text-ink outline-none placeholder:text-ink-3 [&::-webkit-search-cancel-button]:hidden"
       />
