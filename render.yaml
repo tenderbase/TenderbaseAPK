@@ -15,6 +15,7 @@ services:
     envVars:
       # --- Tender API (upstream on Render free tier; the app's 45s timeout +
       # "waking up" fallback handles its cold starts) ---
+      # --- Tender API ---
       - key: TENDERBASE_API_URL
         value: https://tenderbased-production.up.railway.app/api/v1
       - key: TENDERBASE_API_KEY
@@ -23,14 +24,18 @@ services:
       - key: TENDERBASE_ADMIN_SECRET
         sync: false
         required: false
-      # --- GroqCloud AI (server-side AI) ---
+      # --- AI Services (Gemini & GroqCloud) ---
+      - key: GEMINI_API_KEY
+        sync: false
+        required: false
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash
       - key: GROQ_API_KEY
         sync: false
-        required: true
+        required: false
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
-      # --- Supabase (auth + saved tenders + preferences; anon key is safe
-      # to expose to the browser, constrained by RLS) ---
+      # --- Supabase Auth ---
       - key: NEXT_PUBLIC_SUPABASE_URL
         sync: false
         required: true
