@@ -8,13 +8,13 @@ import {
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/Button';
 import { DateField, ReadRow, SavedToast, SelectField, TextField } from '@/components/company/Field';
-import { DEMO_PROFILE, loadProfile, saveProfile } from '@/lib/company';
+import { loadProfile, saveProfile } from '@/lib/company';
 import { fetchProfile, persistProfile } from '@/lib/company-remote';
 import { formatDate } from '@/lib/format';
 import { PROVINCES } from '@/types/tender';
 import {
-  BBBEE_LEVELS, COMPANY_TYPES, calculateCompleteness, getExpiryStatus,
-  validateCompanyProfile,
+  BBBEE_LEVELS, COMPANY_TYPES, EMPTY_COMPANY_PROFILE, calculateCompleteness,
+  getExpiryStatus, validateCompanyProfile,
   type BbbeeLevel, type CompanyProfile, type CompanyType, type ExpiryStatus, type FieldErrors,
 } from '@/types/company';
 
@@ -28,9 +28,9 @@ import {
  */
 export function CompanyProfileView() {
   const router = useRouter();
-  // Seeded with the demo profile so the server and the first client render
-  // agree (no hydration mismatch) and the page has real content before JS.
-  const [profile, setProfile] = useState<CompanyProfile>(DEMO_PROFILE);
+  // Starts empty — the server and first client render agree, and a fresh
+  // profile is shown as the honest empty state below, never a demo persona.
+  const [profile, setProfile] = useState<CompanyProfile>(EMPTY_COMPANY_PROFILE);
   const [draft, setDraft] = useState<CompanyProfile | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [showErrors, setShowErrors] = useState(false);
@@ -50,6 +50,18 @@ export function CompanyProfileView() {
 
   const isEditing = draft !== null;
   const current = draft ?? profile;
+
+  // A profile with no real content gets the "set up" state instead of a wall
+  // of empty read rows.
+  const hasContent = Boolean(
+    current.legalName?.trim() ||
+      current.registrationNumber ||
+      current.vatNumber ||
+      current.csdNumber ||
+      current.contactPerson?.trim() ||
+      current.city?.trim(),
+  );
+  const emptyRead = !isEditing && !hasContent;
 
   const completeness = useMemo(() => calculateCompleteness(current), [current]);
 
@@ -123,11 +135,34 @@ export function CompanyProfileView() {
           onClick={isEditing ? handleSave : startEdit}
           className="shrink-0 rounded-[9px] px-2 py-1.5 text-[14.5px] font-semibold text-blue"
         >
-          {isEditing ? 'Save' : 'Edit'}
+          {isEditing ? 'Save' : emptyRead ? 'Set up' : 'Edit'}
         </button>
       </header>
 
-      <div className="px-5 pt-3.5">
+      {emptyRead && (
+        <div className="px-5 pt-3.5">
+          <section className="flex flex-col items-center rounded-lg border border-dashed border-line bg-white px-5 py-10 text-center">
+            <span className="mb-3.5 flex h-[52px] w-[52px] items-center justify-center rounded-[16px] bg-blue-soft text-navy">
+              <Building2 size={24} strokeWidth={1.8} aria-hidden />
+            </span>
+            <h2 className="text-card-title font-semibold tracking-[-0.02em] text-ink">
+              Build your company profile
+            </h2>
+            <p className="mt-1.5 max-w-[280px] text-meta leading-5 text-ink-2">
+              Your company details (CIPC, SARS, CSD, CIDB) qualify you for bids
+              and let TenderBase match the tenders that actually fit you.
+            </p>
+            <Button size="sm" className="mt-4" onClick={startEdit}>
+              Set up profile
+            </Button>
+          </section>
+          <p className="mt-3 text-center text-caption text-ink-3">
+            Nothing is stored until you save — and saved details stay private to your account.
+          </p>
+        </div>
+      )}
+
+      {!emptyRead && <div className="px-5 pt-3.5">
         {/* Identity + completeness */}
         <section className="rounded-lg border border-line bg-white p-3.5 shadow-card-sm">
           <div className="flex items-center gap-3">
@@ -228,12 +263,13 @@ export function CompanyProfileView() {
           <ReadView profile={current} taxStatus={taxStatus} bbbeeStatus={bbbeeStatus} />
         )}
 
-        {!isEditing && (
+        {!isEditing && !emptyRead && (
           <p className="mb-2 mt-4 text-center text-[11px] text-ink-3">
             Last updated {formatDate(current.updatedAt)}
           </p>
         )}
-      </div>
+        </div>
+      }
 
       {isEditing && (
         <div className="fixed inset-x-0 bottom-[76px] z-30 border-t border-line bg-white px-5 py-3 md:bottom-0 md:pl-[calc(15rem+1.25rem)]">
@@ -361,7 +397,7 @@ function EditForm({
           value={profile.legalName}
           onChange={(v) => set('legalName', v)}
           error={err('legalName')}
-          placeholder="Mkhize Solutions (Pty) Ltd"
+          placeholder="e.g. Sizwe Construction (Pty) Ltd"
           autoComplete="organization"
         />
         <TextField

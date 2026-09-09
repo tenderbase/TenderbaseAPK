@@ -13,23 +13,26 @@ import {
   FIXTURE_STATS,
   FIXTURE_TENDERS,
 } from '@/lib/fixtures/tender-api';
-import { API_BASE_URL, FIXTURES_ONLY, TenderApiError, tenderApiServer } from '@/lib/tender-api.server';
+import { API_BASE_URL, FIXTURES_ALLOWED, FIXTURES_ONLY, TenderApiError, tenderApiServer } from '@/lib/tender-api.server';
 import type { ApiSort, ApiStats, ApiTender, ApiTenderQuery } from '@/types/api';
 import type { Category, SortOption, TenderWithUserState } from '@/types/tender';
 
 /**
  * The single data source every screen reads from.
  *
- * Talks to the TenderBase Ingestion API (`API_BASE_URL`) and falls back to the
- * real payloads captured in `lib/fixtures` when the service is unreachable, so
- * the app is always demoable. `source` tells the UI which it got — surfaced
- * honestly by `DataSourceNotice` rather than passing captures off as live.
+ * Talks to the TenderBase Ingestion API (`API_BASE_URL`). In development and
+ * test builds only (`FIXTURES_ALLOWED`), an unreachable service falls back to
+ * the real payloads captured in `lib/fixtures`, so previews stay demoable.
+ * In production a failure is reported honestly as `source: 'error'` — a paying
+ * user must never be shown a stale 8-tender snapshot pretending to be the
+ * catalogue. `source` tells the UI which happened; `DataSourceNotice` renders
+ * fixture and error states, and is silent on the live happy path.
  *
  * The API is public: there is no key to configure, so nothing here is gated on
  * `TENDERBASE_API_KEY` any more.
  */
 
-export type DataSource = 'live' | 'fixture';
+export type DataSource = 'live' | 'fixture' | 'error';
 
 export interface TenderPage {
   results: TenderWithUserState[];
@@ -118,7 +121,7 @@ export function buildApiQuery(opts: ListOptions, now = new Date()): ApiTenderQue
 }
 
 // ---------------------------------------------------------------------------
-// Fixture fallback
+// Fixture fallback (development/test only) + production error envelope
 // ---------------------------------------------------------------------------
 
 function fixtureNotice(e?: unknown): string {
@@ -131,6 +134,20 @@ function fixtureNotice(e?: unknown): string {
   }
   if (e) return `${captured}`;
   return captured;
+}
+
+/** User-facing copy for the production error state. Never mentions fixtures. */
+function errorNotice(e?: unknown): string {
+  if (e instanceof TenderApiError) {
+    if (e.code === 'UPSTREAM_TIMEOUT')
+      return 'The tender service is still waking up. Please try again in a moment.';
+    if (e.code === 'NETWORK_ERROR')
+      return 'Could not reach the tender service. Please try again shortly.';
+    if (e.code === 'INVALID_QUERY')
+      return 'The tender service rejected our query. Please refresh and try again.';
+    return `The tender service returned an error (${e.code}). Please try again.`;
+  }
+  return 'The tender service is unavailable right now. Please try again shortly.';
 }
 
 function matches(t: ApiTender, q: string): boolean {
@@ -185,6 +202,22 @@ function fixturePage(opts: ListOptions = {}, notice?: string, now = new Date()):
   };
 }
 
+/**
+ * Production failure envelope: empty page + `source: 'error'`. The UI renders a
+ * real error state instead of silently showing fixtures or an empty "no
+ * results" screen.
+ */
+function errorPage(opts: ListOptions = {}, e?: unknown): TenderPage {
+  return {
+    results: [],
+    total: 0,
+    page: Math.max(1, opts.page ?? 1),
+    totalPages: 1,
+    source: 'error',
+    notice: errorNotice(e),
+  };
+}
+
 /** Every entry point funnels failures here, so no screen can throw to the user. */
 function withFallback<T>(
   live: () => Promise<T>,
@@ -216,22 +249,34 @@ export async function listTenders(opts: ListOptions = {}): Promise<TenderPage> {
         source: 'live' as DataSource,
       };
     },
-    (e) => fixturePage(opts, fixtureNotice(e)),
+    (e) => (FIXTURES_ALLOWED ? fixturePage(opts, fixtureNotice(e)) : errorPage(opts, e)),
     'list',
   );
 }
 
+export type DetailOutcome =
+  | {
+      tender: ReturnType<typeof adaptDetail>;
+      source: 'live' | 'fixture';
+      notice?: string;
+    }
+  | { source: 'error'; notice: string }
+  | null;
+
 /**
- * `GET /tenders/:id`. Returns null on a genuine 404 so the page can
- * `notFound()`; any other failure falls back to the captured fixtures.
+ * `GET /tenders/:id`.
+ *
+ * 404 -> null (the page calls `notFound()`). Upstream unreachable -> the
+ * captured fixture in dev/test, or `{ source: 'error' }` in production — a
+ * service outage must not read as "this tender does not exist".
  */
-export async function getTender(id: string) {
-  const fromFixtures = () => {
+export async function getTender(id: string): Promise<DetailOutcome> {
+  const fromFixtures = (): DetailOutcome => {
     const t = FIXTURE_TENDERS.results.find((x) => x.id === id);
     return t
       ? {
           tender: adaptDetail({ ...t, amendments: [] }),
-          source: 'fixture' as DataSource,
+          source: 'fixture',
           notice: fixtureNotice(),
         }
       : null;
@@ -241,12 +286,14 @@ export async function getTender(id: string) {
 
   try {
     const res = await tenderApiServer.getById(id);
-    if (!res?.tender) return fromFixtures();
-    return { tender: adaptDetail(res.tender), source: 'live' as DataSource };
+    if (!res?.tender) {
+      return FIXTURES_ALLOWED ? fromFixtures() : { source: 'error', notice: errorNotice() };
+    }
+    return { tender: adaptDetail(res.tender), source: 'live' };
   } catch (e) {
     if (e instanceof TenderApiError && e.status === 404) return null;
     console.error('[tenders] detail failed:', e instanceof Error ? e.message : e);
-    return fromFixtures();
+    return FIXTURES_ALLOWED ? fromFixtures() : { source: 'error', notice: errorNotice(e) };
   }
 }
 
@@ -294,7 +341,12 @@ export async function getFacets(): Promise<Facets> {
         source: 'live' as DataSource,
       };
     },
-    (e) => fixtureFacets(fixtureNotice(e)),
+    (e) => (FIXTURES_ALLOWED ? fixtureFacets(fixtureNotice(e)) : {
+      categories: [],
+      provinces: [],
+      source: 'error' as DataSource,
+      notice: errorNotice(e),
+    }),
     'facets',
   );
 }
@@ -314,7 +366,22 @@ export async function getStats(): Promise<DatasetStats> {
       const res = await tenderApiServer.stats();
       return { ...res.stats, source: 'live' as DataSource };
     },
-    (e) => ({ ...FIXTURE_STATS.stats, source: 'fixture' as DataSource, notice: fixtureNotice(e) }),
+    (e) =>
+      FIXTURES_ALLOWED
+        ? { ...FIXTURE_STATS.stats, source: 'fixture' as DataSource, notice: fixtureNotice(e) }
+        : {
+            totalTenders: 0,
+            activeTenders: 0,
+            completedTenders: 0,
+            cancelledTenders: 0,
+            expiringSoonTenders: 0,
+            categoriesCount: 0,
+            provincesCount: 0,
+            latestPublishedDate: null,
+            uptimeSeconds: 0,
+            source: 'error' as DataSource,
+            notice: errorNotice(e),
+          },
     'stats',
   );
 }

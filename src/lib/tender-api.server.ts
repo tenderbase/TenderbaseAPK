@@ -46,12 +46,21 @@ const API_KEY = process.env.TENDERBASE_API_KEY ?? '';
 const TIMEOUT_MS = Number(process.env.TENDERBASE_API_TIMEOUT_MS ?? 20_000);
 
 /**
+ * Captured fixtures may only ever appear in non-production builds. A deployed
+ * Render instance must never serve the 8 captured tenders to real users, even
+ * if someone sets TENDERBASE_FIXTURES_ONLY on the host or the upstream is down.
+ */
+export const FIXTURES_ALLOWED = process.env.NODE_ENV !== 'production';
+
+/**
  * Escape hatch for CI, tests and sandboxes with no egress to the API: skip the
  * network entirely and serve the captured fixtures in `lib/fixtures`. The UI
- * still reports this honestly through `DataSourceNotice`.
+ * still reports this honestly through `DataSourceNotice`. Hard-gated on
+ * `FIXTURES_ALLOWED`, so production can never read fixtures.
  */
 export const FIXTURES_ONLY =
-  process.env.TENDERBASE_FIXTURES_ONLY === 'true' || process.env.NODE_ENV === 'test';
+  FIXTURES_ALLOWED &&
+  (process.env.TENDERBASE_FIXTURES_ONLY === 'true' || process.env.NODE_ENV === 'test');
 
 /**
  * Upstream does not publish a `limit` ceiling and `/docs/json` has empty

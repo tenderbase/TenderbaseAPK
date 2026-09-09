@@ -1,14 +1,13 @@
-import { AlertTriangle, Database } from 'lucide-react';
+import { AlertTriangle, Database, WifiOff } from 'lucide-react';
 import type { DataSource } from '@/lib/tenders';
 
 /**
- * Tells the user when they are looking at captured fixtures instead of live
- * tenders. Silent on the happy path — a badge on every screen would be noise.
- *
- * The fallback data is real: verbatim payloads captured from the ingestion API
- * (see `lib/fixtures/tender-api.ts`), not invented rows. It is still labelled,
- * because a stale snapshot presented as current would mislead someone deciding
- * whether they have time to bid.
+ * Tells the user when they are NOT looking at the live catalogue:
+ *   - `fixture` (dev/test only): captured real payloads, amber, with the
+ *     capture date so a stale snapshot is never mistaken for current data.
+ *   - `error` (production, upstream down): red-tinted so an outage never reads
+ *     as an empty catalogue or a "no results" search.
+ * Silent on the happy path — a badge on every live screen would be noise.
  */
 export function DataSourceNotice({
   source,
@@ -19,14 +18,24 @@ export function DataSourceNotice({
 }) {
   if (source === 'live') return null;
 
+  const error = source === 'error';
   return (
     <div
       role="status"
-      className="mb-3 flex items-start gap-2.5 rounded-[12px] border border-soon/25 bg-soon-bg px-3 py-2.5"
+      className={`mb-3 flex items-start gap-2.5 rounded-[12px] border px-3 py-2.5 ${
+        error ? 'border-urgent/25 bg-urgent-bg' : 'border-soon/25 bg-soon-bg'
+      }`}
     >
-      <AlertTriangle size={15} strokeWidth={2.1} className="mt-px shrink-0 text-soon" aria-hidden />
-      <p className="text-[11.5px] leading-[1.45] text-ink-2">
-        {notice ?? 'Showing tenders captured from the live API — the service is unreachable right now.'}
+      {error ? (
+        <WifiOff size={15} strokeWidth={2.1} className="mt-px shrink-0 text-urgent" aria-hidden />
+      ) : (
+        <AlertTriangle size={15} strokeWidth={2.1} className="mt-px shrink-0 text-soon" aria-hidden />
+      )}
+      <p className={`text-[11.5px] leading-[1.45] ${error ? 'text-ink' : 'text-ink-2'}`}>
+        {notice ??
+          (error
+            ? 'Could not reach the tender service. Please try again shortly.'
+            : 'Showing tenders captured from the live API — the service is unreachable right now.')}
       </p>
     </div>
   );

@@ -27,9 +27,8 @@ export default async function DashboardPage() {
       closingSoon={closingPage.results}
       stats={{
         // Real counts from /stats, not the row count of a 1-record probe.
-        newThisWeek: stats.activeTenders,
-        closingSoon: closingPage.total || stats.expiringSoonTenders,
-        saved: 0,
+        open: stats.activeTenders,
+        closing: closingPage.total || stats.expiringSoonTenders,
       }}
       source={source}
       notice={notice}

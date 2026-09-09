@@ -13,39 +13,20 @@ import {
  * swapping in a real backend touches nothing else.
  */
 
-const STORAGE_KEY = 'tenderbase.company-profile.v1';
+// v2: v1 seeded a demo persona ("Mkhize Solutions") into first-run storage.
+// Bumping the key drops any leftover demo row so a fresh account starts blank.
+const STORAGE_KEY = 'tenderbase.company-profile.v2';
 
-/** Seeded so the screen has realistic content before Supabase exists. */
-export const DEMO_PROFILE: CompanyProfile = {
-  legalName: 'Mkhize Solutions (Pty) Ltd',
-  tradingName: 'Mkhize Solutions',
-  companyType: 'Private Company (Pty) Ltd',
-  registrationNumber: '2018/443921/07',
-  vatNumber: '4820318877',
-  csdNumber: 'MAAA0891234',
-  taxClearanceExpiry: '2027-03-31',
-  bbbeeLevel: 2,
-  bbbeeExpiry: '2027-01-15',
-  cidbGrading: null,
-  contactPerson: 'Sipho Mkhize',
-  email: 'info@mkhize-solutions.co.za',
-  phone: '+27 31 502 8841',
-  addressLine: '14 Umgeni Road',
-  city: 'Durban',
-  province: 'KwaZulu-Natal',
-  postalCode: '4001',
-  updatedAt: new Date().toISOString(),
-};
-
+/** Nothing is seeded — an unset profile is an empty profile, shown honestly. */
 export function loadProfile(): CompanyProfile {
-  if (typeof window === 'undefined') return DEMO_PROFILE;
+  if (typeof window === 'undefined') return EMPTY_COMPANY_PROFILE;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEMO_PROFILE;
+    if (!raw) return EMPTY_COMPANY_PROFILE;
     // Merge over the empty shape so fields added in a later version exist.
     return { ...EMPTY_COMPANY_PROFILE, ...(JSON.parse(raw) as Partial<CompanyProfile>) };
   } catch {
-    return DEMO_PROFILE;
+    return EMPTY_COMPANY_PROFILE;
   }
 }
 

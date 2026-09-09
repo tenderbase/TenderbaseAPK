@@ -2,7 +2,7 @@
 import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'ai' | 'danger';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type Size = 'md' | 'sm';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -15,7 +15,6 @@ const VARIANTS: Record<Variant, string> = {
   primary: 'bg-navy text-white shadow-primary active:bg-navy-900',
   secondary: 'bg-white text-navy border-[1.5px] border-line active:bg-canvas',
   ghost: 'bg-blue-soft text-navy active:bg-blue-line',
-  ai: 'bg-ai-bg text-ai active:bg-ai-line',
   danger: 'bg-urgent-bg text-urgent active:bg-urgent/10',
 };
 

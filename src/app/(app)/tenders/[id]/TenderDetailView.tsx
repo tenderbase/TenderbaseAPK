@@ -3,13 +3,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ChevronLeft, Share2, Bookmark, Building2, Sparkles,
+  ChevronLeft, Share2, Bookmark, Building2, Check,
   FileText, History, Download, Mail, Phone, User, ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { StatusBadge, CategoryBadge } from '@/components/ui/StatusBadge';
-import { Button } from '@/components/ui/Button';
 import { DataSourceNotice } from '@/components/ui/DataSourceNotice';
+import { useSavedTenders } from '@/lib/saved-store';
 import { formatValue, formatDate, daysUntil, getStatus, normaliseCase } from '@/lib/format';
 import type { DataSource } from '@/lib/tenders';
 import type { TenderWithUserState } from '@/types/tender';
@@ -39,9 +39,31 @@ export function TenderDetailView({
   source: DataSource;
 }) {
   const router = useRouter();
-  const [saved, setSaved] = useState(tender.isSaved);
+  const { isSaved, toggleSaved } = useSavedTenders();
+  const [copiedLink, setCopiedLink] = useState(false);
+  const saved = isSaved(tender.id);
   const remaining = tender.closingDate ? daysUntil(tender.closingDate) : null;
   const status = getStatus(tender);
+
+  const shareOrCopy = async () => {
+    const url = window.location.href;
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({ title: tender.title, url });
+      } catch {
+        /* user dismissed the share sheet — not an error */
+      }
+      return;
+    }
+    // No native share (older Android WebView, desktop): copy the link instead.
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      window.setTimeout(() => setCopiedLink(false), 2000);
+    } catch {
+      /* clipboard unavailable — nothing further to do */
+    }
+  };
 
   return (
     <main className="pb-24">
@@ -55,18 +77,23 @@ export function TenderDetailView({
         </button>
         <div className="flex gap-2.5">
           <button
-            aria-label="Share tender"
-            onClick={() => {
-              if (typeof navigator !== 'undefined' && navigator.share) {
-                void navigator.share({ title: tender.title, url: window.location.href });
-              }
-            }}
-            className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-canvas text-ink"
+            type="button"
+            aria-label={copiedLink ? 'Link copied' : 'Share tender'}
+            onClick={() => void shareOrCopy()}
+            className={cn(
+              'flex h-[38px] w-[38px] items-center justify-center rounded-[10px] transition-colors',
+              copiedLink ? 'bg-open-bg text-open' : 'bg-canvas text-ink',
+            )}
           >
-            <Share2 size={19} strokeWidth={1.75} aria-hidden />
+            {copiedLink ? (
+              <Check size={19} strokeWidth={2.2} aria-hidden />
+            ) : (
+              <Share2 size={19} strokeWidth={1.75} aria-hidden />
+            )}
           </button>
           <button
-            onClick={() => setSaved((s) => !s)}
+            type="button"
+            onClick={() => toggleSaved(tender)}
             aria-pressed={saved}
             aria-label={saved ? 'Remove from saved' : 'Save tender'}
             className={cn(
@@ -275,15 +302,6 @@ export function TenderDetailView({
             </ul>
           </section>
         )}
-      </div>
-
-      <div className="fixed inset-x-0 bottom-[76px] z-30 border-t border-line bg-white px-5 py-3 md:bottom-0 md:pl-[calc(15rem+1.25rem)]">
-        <div className="mx-auto flex max-w-3xl gap-2.5 md:max-w-5xl">
-          <Button className="flex-1" disabled type="button">
-            <Sparkles size={18} strokeWidth={2} aria-hidden />
-            AI Summarise
-          </Button>
-        </div>
       </div>
     </main>
   );

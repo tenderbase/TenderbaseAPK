@@ -1,77 +1,140 @@
-'use client';
+import Link from 'next/link';
+import { Sparkles, CalendarRange } from 'lucide-react';
+import { getUser } from '@/lib/supabase-server';
+import { countSavedTenders } from '@/lib/saved-server';
+import { getClosingSoon, getLatest, getStats } from '@/lib/tenders';
+import { formatDate } from '@/lib/format';
+import { CompactTenderCard } from '@/components/tender/CompactTenderCard';
+import { TenderCard } from '@/components/tender/TenderCard';
+import { DataSourceNotice } from '@/components/ui/DataSourceNotice';
 
-import { useRouter } from 'next/navigation';
-import { ChevronLeft, Target, Clock, TrendingUp, Building2, ChevronRight } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { cn } from '@/lib/cn';
+export const revalidate = 300;
 
-const ITEMS: { icon: LucideIcon; tone: string; title: string; body: string; action: string }[] = [
-  { icon: Target, tone: 'bg-blue-soft text-blue', title: 'Top opportunity this week', body: 'Supply and Delivery of Computer Equipment (eThekwini Municipality) matches your IT preference — closing 12 September.', action: 'Open tender' },
-  { icon: Clock, tone: 'bg-soon-bg text-soon', title: 'Act soon', body: 'Provision of Security Services closes in 2 days and is still on your saved list.', action: 'Review saved' },
-  { icon: TrendingUp, tone: 'bg-blue-soft text-blue', title: 'Category trend', body: 'IT & Technology tenders in KZN rose 38% this week. Cleaning contracts stayed flat.', action: 'See all IT tenders' },
-  { icon: Building2, tone: 'bg-open-bg text-open', title: 'New organisation for you', body: 'KZN Department of Education published its first tender matching your profile.', action: 'View organisation' },
-];
+/** Monday–Sunday range around today, rendered e.g. "07 Sep 2026 – 13 Sep 2026". */
+function weekRange(now = new Date()): string {
+  const mon = new Date(now);
+  const dayOffset = (mon.getDay() + 6) % 7; // 0 for Monday
+  mon.setDate(mon.getDate() - dayOffset);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  return `${formatDate(mon.toISOString())} – ${formatDate(sun.toISOString())}`;
+}
 
-export default function BriefingPage() {
-  const router = useRouter();
+/**
+ * Weekly briefing.
+ *
+ * Phase-0 honesty: everything here is computed from the live catalogue and the
+ * user's own saved tenders — no fabricated "18 new matches / rose 38%" copy.
+ * Personal match digests arrive with the AI/matching engine (later phase);
+ * until then the page tells the truth about what it is showing.
+ */
+export default async function BriefingPage() {
+  const user = await getUser();
+  const [stats, closingPage, latest] = await Promise.all([
+    getStats(),
+    getClosingSoon(5, 7),
+    getLatest(4),
+  ]);
+  const savedCount = user ? await countSavedTenders() : 0;
+  const source = stats.source === 'fixture' || latest.source === 'fixture' ? 'fixture' : stats.source;
+  const notice = latest.notice ?? stats.notice;
+
   return (
     <main className="pb-8">
-      <header className="flex items-center gap-3 bg-white px-4 py-2">
-        <button onClick={() => router.back()} aria-label="Go back" className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-canvas text-ink">
-          <ChevronLeft size={21} strokeWidth={1.75} aria-hidden />
-        </button>
-        <h1 className="text-card-title font-semibold tracking-[-0.02em]">Weekly Briefing</h1>
+      <header className="flex items-center gap-3 border-b border-line bg-white px-4 py-2">
+        <span className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-blue-soft text-navy">
+          <Sparkles size={17} strokeWidth={2} aria-hidden />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-card-title font-semibold tracking-[-0.02em]">Weekly Briefing</h1>
+        </div>
       </header>
 
       <div className="px-5 pt-3.5">
+        <DataSourceNotice source={source} notice={notice} />
+
+        <p className="mb-2 flex items-center gap-1.5 text-caption text-ink-3">
+          <CalendarRange size={13} strokeWidth={2} aria-hidden />
+          This week · {weekRange()}
+        </p>
+
         <section className="rounded-lg border border-line bg-white p-4 shadow-card">
-          <div className="mb-2.5 flex items-center justify-between">
-            <span className="rounded-md bg-navy/10 px-2 py-0.5 text-micro font-semibold text-navy">Weekly Briefing</span>
-            <span className="text-micro text-ink-3">Mon 31 Aug – Sun 6 Sep</span>
-          </div>
-          <p className="text-[14.5px] leading-[22px]">
-            <b>18 new tenders</b> matched your preferences this week — up from 11 last week, driven mainly by municipal
-            IT procurement in KwaZulu-Natal.
-          </p>
+          <span className="rounded-md bg-navy/10 px-2 py-0.5 text-micro font-semibold text-navy">
+            {user ? 'Your week in tenders' : 'The week in tenders'}
+          </span>
           <dl className="mt-3.5 flex gap-2.5">
-            {[['18', 'New matches', ''], ['4', 'Closing next week', 'text-soon'], ['R31M', 'Combined value', '']].map(
-              ([v, l, c]) => (
-                <div key={l} className="flex-1 rounded-[11px] bg-canvas p-2.5">
-                  <dd className={cn('text-[19px] font-bold leading-none tracking-[-0.04em]', c)}>{v}</dd>
-                  <dt className="mt-1 text-micro text-ink-3">{l}</dt>
-                </div>
-              ),
-            )}
-          </dl>
-        </section>
-
-        <section className="mt-3.5 divide-y divide-line rounded-lg border border-line bg-white px-4">
-          {ITEMS.map(({ icon: Icon, tone, title, body, action }) => (
-            <div key={title} className="flex gap-3 py-3.5">
-              <span className={cn('flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px]', tone)}>
-                <Icon size={17} strokeWidth={2} aria-hidden />
-              </span>
-              <div className="min-w-0 flex-1">
-                <h2 className="text-body font-semibold tracking-[-0.015em]">{title}</h2>
-                <p className="mt-0.5 text-[12.5px] leading-[19px] text-ink-2">{body}</p>
-                <button className="mt-2 flex items-center gap-1 text-caption font-semibold text-blue">
-                  {action}
-                  <ChevronRight size={14} strokeWidth={2.3} aria-hidden />
-                </button>
+            {[
+              [String(stats.activeTenders), 'Open right now', ''],
+              [String(closingPage.total), 'Closing this week', 'text-soon'],
+              [user ? String(savedCount) : '—', 'Saved by you', ''],
+            ].map(([v, l, c]) => (
+              <div key={l} className="flex-1 rounded-[11px] bg-canvas p-2.5">
+                <dd className={`text-[19px] font-bold leading-none tracking-[-0.04em] ${c}`}>{v}</dd>
+                <dt className="mt-1 text-micro leading-[13px] text-ink-3">{l}</dt>
               </div>
-            </div>
-          ))}
+            ))}
+          </dl>
+          {user ? (
+            <p className="mt-3 text-[13px] leading-[19px] text-ink-2">
+              These are live catalogue numbers. Once you&apos;ve set up your company profile
+              and preferences, this briefing will lead with the tenders that match you.
+            </p>
+          ) : (
+            <p className="mt-3 text-[13px] leading-[19px] text-ink-2">
+              These are live catalogue numbers. A personal briefing — new tenders that match
+              your business, closing soon, worth your time — starts with a free account.
+            </p>
+          )}
         </section>
 
-        <section className="mt-3.5 rounded-lg border border-line bg-white p-4">
-          <h2 className="text-[14.5px] font-semibold tracking-[-0.02em]">Suggested next step</h2>
-          <p className="mt-1 text-meta leading-5 text-ink-2">
-            Add your <b className="text-ink">CIDB grading</b> to unlock an estimated 6 additional matches per week in
-            Construction and Engineering.
-          </p>
-          <Button variant="secondary" size="sm" className="mt-3">Complete company profile</Button>
-        </section>
+        {!user && (
+          <section className="mt-3.5 flex flex-col items-center rounded-lg border border-dashed border-line bg-white px-5 py-7 text-center">
+            <h2 className="text-card-title font-semibold tracking-[-0.02em] text-ink">
+              Make this briefing yours
+            </h2>
+            <p className="mt-1.5 max-w-[280px] text-meta text-ink-2">
+              Sign in free, add your company profile, and TenderBase will match the week to you.
+            </p>
+            <Link
+              href="/login?next=/briefing"
+              className="mt-4 inline-flex h-[46px] items-center justify-center rounded-md bg-navy px-5 text-[14.5px] font-semibold text-white"
+            >
+              Sign in — it&apos;s free
+            </Link>
+          </section>
+        )}
+
+        {closingPage.results.length > 0 && (
+          <>
+            <div className="mb-3 mt-5 flex items-baseline justify-between">
+              <h2 className="text-section font-semibold tracking-[-0.02em] text-ink">Closing this week</h2>
+              <Link href="/search?closingWithin=7d" className="text-meta font-semibold text-blue">
+                See all
+              </Link>
+            </div>
+            <div className="space-y-2.5">
+              {closingPage.results.map((t) => (
+                <CompactTenderCard key={t.id} tender={t} />
+              ))}
+            </div>
+          </>
+        )}
+
+        {latest.results.length > 0 && (
+          <>
+            <div className="mb-3 mt-5 flex items-baseline justify-between">
+              <h2 className="text-section font-semibold tracking-[-0.02em] text-ink">Latest published</h2>
+              <Link href="/search" className="text-meta font-semibold text-blue">
+                See all
+              </Link>
+            </div>
+            <div className="space-y-3 md:grid md:grid-cols-2 md:gap-3 md:space-y-0">
+              {latest.results.map((t) => (
+                <TenderCard key={t.id} tender={t} showTenderNumber={false} />
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </main>
   );

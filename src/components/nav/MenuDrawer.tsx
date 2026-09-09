@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   X, Home, Search, Bookmark, Bell, User, Sparkles, Building2,
   SlidersHorizontal, Crown, HelpCircle, ShieldCheck, LogOut, ChevronRight,
@@ -10,6 +10,9 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useDrawer } from '@/components/nav/DrawerProvider';
+import { createClient } from '@/lib/supabase';
+import { isSupabaseConfigured } from '@/lib/supabase-config';
+import { useSavedTenders } from '@/lib/saved-store';
 
 /**
  * Slide-in navigation drawer.
@@ -37,7 +40,7 @@ const PRIMARY: Item[] = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/search', label: 'Search tenders', icon: Search },
   { href: '/saved', label: 'Saved', icon: Bookmark },
-  { href: '/alerts', label: 'Alerts', icon: Bell, badge: 3 },
+  { href: '/alerts', label: 'Alerts', icon: Bell },
 ];
 
 const INTELLIGENCE: Item[] = [
@@ -45,12 +48,12 @@ const INTELLIGENCE: Item[] = [
 ];
 
 const ACCOUNT: Item[] = [
-  { href: '/profile', label: 'Profile', icon: User, sub: 'Sipho Mkhize' },
+  { href: '/profile', label: 'Profile', icon: User },
   // No subtitle: the company name lives in the profile itself and would go
   // stale here the moment it is edited.
   { href: '/profile/company', label: 'Company profile', icon: Building2 },
   { href: '/profile/preferences', label: 'Tender preferences', icon: SlidersHorizontal },
-  { href: '/settings', label: 'Subscription', icon: Crown, sub: 'Professional · renews 28 Sep', soon: true },
+  { href: '/settings', label: 'Subscription', icon: Crown, soon: true },
 ];
 
 const SUPPORT: Item[] = [
@@ -61,6 +64,9 @@ const SUPPORT: Item[] = [
 export function MenuDrawer() {
   const { isOpen, close } = useDrawer();
   const pathname = usePathname();
+  const router = useRouter();
+  const { session } = useSavedTenders();
+  const [signingOut, setSigningOut] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
@@ -174,22 +180,35 @@ export function MenuDrawer() {
           </button>
         </div>
 
-        {/* Account card — the drawer's one piece of identity context */}
+        {/* Account card — real identity from the session, honest for guests */}
         <Link
-          href="/profile"
+          href={session.signedIn ? '/profile' : '/login'}
           tabIndex={isOpen ? undefined : -1}
           className="flex items-center gap-3 border-b border-line px-5 py-3.5"
         >
           <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[13px] bg-navy text-body-lg font-semibold text-white">
-            SM
+            {session.signedIn ? (session.initials ?? 'U') : <User size={20} strokeWidth={1.9} aria-hidden />}
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14.5px] font-semibold tracking-[-0.015em]">
-              Sipho Mkhize
-            </span>
-            <span className="mt-px block truncate text-caption text-ink-3">
-              sipho@mkhize-solutions.co.za
-            </span>
+            {session.signedIn ? (
+              <>
+                <span className="block truncate text-[14.5px] font-semibold tracking-[-0.015em]">
+                  {session.name ?? 'Your account'}
+                </span>
+                <span className="mt-px block truncate text-caption text-ink-3">
+                  {session.email ?? 'Signed in'}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="block truncate text-[14.5px] font-semibold tracking-[-0.015em]">
+                  Sign in or create an account
+                </span>
+                <span className="mt-px block truncate text-caption text-ink-3">
+                  Save tenders, manage preferences — free
+                </span>
+              </>
+            )}
           </span>
           <ChevronRight size={17} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />
         </Link>
@@ -202,15 +221,32 @@ export function MenuDrawer() {
         </nav>
 
         <div className="border-t border-line px-3 py-2.5 pb-[calc(env(safe-area-inset-bottom)+10px)]">
-          <button
-            type="button"
-            tabIndex={isOpen ? undefined : -1}
-            className="flex w-full items-center gap-3 rounded-[11px] px-2.5 py-2.5 text-left text-urgent"
-          >
-            <LogOut size={19} strokeWidth={1.9} aria-hidden />
-            <span className="text-[14.5px] font-semibold tracking-[-0.015em]">Sign out</span>
-          </button>
-          <p className="px-2.5 pb-0.5 text-[10.5px] text-ink-3">TenderBase v1.4.2</p>
+          {session.signedIn && (
+            <button
+              type="button"
+              tabIndex={isOpen ? undefined : -1}
+              disabled={signingOut}
+              onClick={async () => {
+                setSigningOut(true);
+                try {
+                  if (isSupabaseConfigured) await createClient().auth.signOut();
+                } catch {
+                  /* session is cleared optimistically by supabase-js */
+                } finally {
+                  setSigningOut(false);
+                  close();
+                  router.replace('/');
+                }
+              }}
+              className="flex w-full items-center gap-3 rounded-[11px] px-2.5 py-2.5 text-left text-urgent disabled:opacity-50"
+            >
+              <LogOut size={19} strokeWidth={1.9} aria-hidden />
+              <span className="text-[14.5px] font-semibold tracking-[-0.015em]">
+                {signingOut ? 'Signing out…' : 'Sign out'}
+              </span>
+            </button>
+          )}
+          <p className="px-2.5 pb-0.5 pt-1 text-[10.5px] text-ink-3">TenderBase v1.4.2</p>
         </div>
       </div>
     </>

@@ -2,13 +2,14 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, ArrowUpDown, SearchX, Loader2 } from 'lucide-react';
+import { SlidersHorizontal, ArrowUpDown, SearchX, Loader2, CloudOff } from 'lucide-react';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Chip } from '@/components/ui/Chip';
 import { TenderCard } from '@/components/tender/TenderCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { DataSourceNotice } from '@/components/ui/DataSourceNotice';
 import { MenuButton } from '@/components/nav/MenuButton';
+import { useSavedTenders } from '@/lib/saved-store';
 import type { DataSource } from '@/lib/tenders';
 import type { SortOption, TenderWithUserState } from '@/types/tender';
 
@@ -60,7 +61,13 @@ export function SearchView({
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState(initialQuery);
-  const [saved, setSaved] = useState<Record<string, boolean>>({});
+  const { isSaved, toggleSaved } = useSavedTenders();
+
+  /** Clears every filter AND the query state, so the box can't lie about it. */
+  const clearAll = () => {
+    setQuery('');
+    startTransition(() => router.replace('/search', { scroll: false }));
+  };
 
   // Debounced server round-trip: the query runs against all tenders upstream,
   // not just the page currently in memory.
@@ -111,8 +118,6 @@ export function SearchView({
       ),
     );
   };
-
-  const toggleSave = (id: string) => setSaved((p) => ({ ...p, [id]: !p[id] }));
 
   return (
     <main>
@@ -181,6 +186,8 @@ export function SearchView({
               <span className="flex items-center gap-1.5">
                 <Loader2 size={13} className="animate-spin" aria-hidden /> Searching…
               </span>
+            ) : source === 'error' && total === 0 ? (
+              'Service unavailable'
             ) : (
               <>
                 <span className="font-semibold text-ink">{total.toLocaleString('en-ZA')}</span>{' '}
@@ -195,13 +202,30 @@ export function SearchView({
           )}
         </div>
 
-        {results.length === 0 && !pending ? (
+        {source === 'error' && results.length === 0 && !pending ? (
+          <div className="flex flex-col items-center rounded-lg border border-dashed border-line bg-white px-5 py-8 text-center">
+            <div className="mb-3.5 flex h-[52px] w-[52px] items-center justify-center rounded-[16px] bg-urgent-bg text-urgent">
+              <CloudOff size={24} strokeWidth={1.7} aria-hidden />
+            </div>
+            <h3 className="text-card-title font-semibold tracking-[-0.02em] text-ink">
+              Tenders are unavailable right now
+            </h3>
+            <p className="mt-1.5 max-w-[260px] text-meta text-ink-2">{notice}</p>
+            <button
+              type="button"
+              onClick={() => router.refresh()}
+              className="mt-4 inline-flex h-11 items-center justify-center rounded-md bg-navy px-4 text-[14px] font-semibold text-white"
+            >
+              Try again
+            </button>
+          </div>
+        ) : results.length === 0 && !pending ? (
           <EmptyState
             icon={SearchX}
             title="No tenders match your search"
             description="Try a broader keyword, or clear the category, province and status filters."
-            actionLabel="Clear filters"
-            onAction={() => router.replace('/search')}
+            actionLabel="Clear search"
+            onAction={clearAll}
           />
         ) : (
           <div
@@ -210,8 +234,8 @@ export function SearchView({
             {results.map((t) => (
               <TenderCard
                 key={t.id}
-                tender={{ ...t, isSaved: saved[t.id] ?? t.isSaved }}
-                onToggleSave={toggleSave}
+                tender={{ ...t, isSaved: isSaved(t.id) }}
+                onToggleSave={() => toggleSaved(t)}
               />
             ))}
           </div>

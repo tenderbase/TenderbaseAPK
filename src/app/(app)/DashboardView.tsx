@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Bell, Sparkles, Clock, Bookmark, ChevronRight, Inbox } from 'lucide-react';
+import { Bell, Sparkles, Clock, Bookmark, ChevronRight, Inbox, User, CloudOff } from 'lucide-react';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { StatisticCard } from '@/components/ui/StatisticCard';
@@ -12,6 +12,7 @@ import { CompactTenderCard } from '@/components/tender/CompactTenderCard';
 import { DataSourceNotice, LiveDataFooter } from '@/components/ui/DataSourceNotice';
 import { MenuButton } from '@/components/nav/MenuButton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { firstNameOf, useSavedTenders } from '@/lib/saved-store';
 import type { DataSource } from '@/lib/tenders';
 import type { TenderWithUserState } from '@/types/tender';
 
@@ -25,7 +26,7 @@ function greeting(d = new Date()) {
 export interface DashboardViewProps {
   latest: TenderWithUserState[];
   closingSoon: TenderWithUserState[];
-  stats: { newThisWeek: number; closingSoon: number; saved: number };
+  stats: { open: number; closing: number };
   source: DataSource;
   notice?: string;
 }
@@ -38,10 +39,11 @@ export function DashboardView({
   notice,
 }: DashboardViewProps) {
   const router = useRouter();
+  const { session, count: savedCount, isSaved, toggleSaved } = useSavedTenders();
   const [searchQuery, setSearchQuery] = useState('');
-  const [saved, setSaved] = useState<Record<string, boolean>>({});
-  const toggleSave = (id: string) => setSaved((p) => ({ ...p, [id]: !p[id] }));
-  const withSaved = (t: TenderWithUserState) => ({ ...t, isSaved: saved[t.id] ?? t.isSaved });
+  const withSaved = (t: TenderWithUserState) => ({ ...t, isSaved: isSaved(t.id) });
+  const firstName = session.name ? firstNameOf(session.name) : null;
+  const errored = source === 'error';
 
   const handleSearchSubmit = (q: string) => {
     const trimmed = q.trim();
@@ -59,7 +61,10 @@ export function DashboardView({
           <div className="flex min-w-0 items-center gap-2.5">
             <MenuButton className="md:hidden" />
             <div className="min-w-0">
-              <p className="text-meta font-medium text-ink-3">{greeting()}, Sipho</p>
+              <p className="text-meta font-medium text-ink-3">
+                {greeting()}
+                {firstName ? `, ${firstName}` : ''}
+              </p>
               <h1 className="mt-0.5 truncate text-[20px] font-bold tracking-[-0.035em]">
                 Your tender opportunities
               </h1>
@@ -68,18 +73,17 @@ export function DashboardView({
           <div className="flex items-center gap-2.5">
             <Link
               href="/alerts"
-              aria-label="Alerts, 3 unread"
+              aria-label="Alerts"
               className="relative flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-canvas text-ink"
             >
               <Bell size={21} strokeWidth={1.75} aria-hidden />
-              <span className="absolute right-2 top-[7px] h-2 w-2 rounded-full border-[1.6px] border-white bg-urgent" />
             </Link>
             <Link
-              href="/profile"
-              aria-label="Your profile"
+              href={session.signedIn ? '/profile' : '/login'}
+              aria-label={session.signedIn ? 'Your profile' : 'Sign in'}
               className="flex h-[38px] w-[38px] items-center justify-center rounded-[11px] bg-navy text-body font-semibold text-white"
             >
-              SM
+              {session.signedIn ? (session.initials ?? 'U') : <User size={19} strokeWidth={2} aria-hidden />}
             </Link>
           </div>
         </div>
@@ -104,64 +108,69 @@ export function DashboardView({
       <div className="px-5 pt-4">
         <DataSourceNotice source={source} notice={notice} />
 
-        <SectionHeader title="Your opportunities" />
-        <div className="flex gap-2.5">
-          <StatisticCard label="Open tenders" value={stats.newThisWeek} icon={Sparkles} tone="navy" />
-          <StatisticCard label="Closing soon" value={stats.closingSoon} icon={Clock} tone="amber" />
-          <StatisticCard label="Saved" value={stats.saved} icon={Bookmark} tone="green" />
-        </div>
-
-        <Link
-          href="/briefing"
-          className="mt-3 flex items-center gap-2.5 rounded-[12px] bg-canvas px-3 py-2.5 border border-line"
-        >
-          <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-white text-navy border border-line">
-            <Sparkles size={16} strokeWidth={2.1} aria-hidden />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-meta font-semibold text-navy">Your weekly briefing is ready</span>
-            <span className="mt-px block text-[11.5px] text-ink-2">
-              {stats.newThisWeek.toLocaleString('en-ZA')} open · {stats.closingSoon} closing this week
-            </span>
-          </span>
-          <ChevronRight size={16} strokeWidth={2.3} className="text-navy" aria-hidden />
-        </Link>
-
-        <div className="mt-4">
-          <SectionHeader title="Latest opportunities" action="See all" onAction={() => router.push('/search')} />
-        </div>
-        {latest.length === 0 ? (
-          <EmptyState
-            icon={Inbox}
-            title="No tenders available"
-            description="The tender service returned no results. Try again shortly."
-          />
-        ) : (
-          <div className="space-y-3 md:grid md:grid-cols-2 md:gap-3 md:space-y-0">
-            {latest.slice(0, 4).map((t) => (
-              <TenderCard key={t.id} tender={withSaved(t)} onToggleSave={toggleSave} />
-            ))}
+        {errored ? (
+          <div className="flex flex-col items-center rounded-lg border border-dashed border-line bg-white px-5 py-8 text-center">
+            <div className="mb-3.5 flex h-[52px] w-[52px] items-center justify-center rounded-[16px] bg-urgent-bg text-urgent">
+              <CloudOff size={24} strokeWidth={1.7} aria-hidden />
+            </div>
+            <h3 className="text-card-title font-semibold tracking-[-0.02em] text-ink">
+              Tenders are unavailable right now
+            </h3>
+            <p className="mt-1.5 max-w-[260px] text-meta text-ink-2">{notice}</p>
+            <button
+              type="button"
+              onClick={() => router.refresh()}
+              className="mt-4 inline-flex h-11 items-center justify-center rounded-md bg-navy px-4 text-[14px] font-semibold text-white"
+            >
+              Try again
+            </button>
           </div>
-        )}
-
-        {closingSoon.length > 0 && (
+        ) : (
           <>
+            <SectionHeader title="Your opportunities" />
+            <div className="flex gap-2.5">
+              <StatisticCard label="Open tenders" value={stats.open} icon={Sparkles} tone="navy" />
+              <StatisticCard label="Closing soon" value={stats.closing} icon={Clock} tone="amber" />
+              <StatisticCard label="Saved" value={savedCount} icon={Bookmark} tone="green" />
+            </div>
+
             <div className="mt-4">
-              <SectionHeader
-                title="Closing soon"
-                action="See all"
-                onAction={() => router.push('/search?closingWithin=7d')}
+              <SectionHeader title="Latest opportunities" action="See all" onAction={() => router.push('/search')} />
+            </div>
+            {latest.length === 0 ? (
+              <EmptyState
+                icon={Inbox}
+                title="No tenders available"
+                description="The tender service returned no results. Try again shortly."
               />
-            </div>
-            <div className="space-y-2.5 md:grid md:grid-cols-2 md:gap-2.5 md:space-y-0">
-              {closingSoon.slice(0, 4).map((t) => (
-                <CompactTenderCard key={t.id} tender={t} />
-              ))}
-            </div>
+            ) : (
+              <div className="space-y-3 md:grid md:grid-cols-2 md:gap-3 md:space-y-0">
+                {latest.slice(0, 4).map((t) => (
+                  <TenderCard key={t.id} tender={withSaved(t)} onToggleSave={() => toggleSaved(t)} />
+                ))}
+              </div>
+            )}
+
+            {closingSoon.length > 0 && (
+              <>
+                <div className="mt-4">
+                  <SectionHeader
+                    title="Closing soon"
+                    action="See all"
+                    onAction={() => router.push('/search?closingWithin=7d')}
+                  />
+                </div>
+                <div className="space-y-2.5 md:grid md:grid-cols-2 md:gap-2.5 md:space-y-0">
+                  {closingSoon.slice(0, 4).map((t) => (
+                    <CompactTenderCard key={t.id} tender={t} />
+                  ))}
+                </div>
+              </>
+            )}
+
+            <LiveDataFooter source={source} total={stats.open} />
           </>
         )}
-
-        <LiveDataFooter source={source} total={stats.newThisWeek} />
       </div>
     </main>
   );
