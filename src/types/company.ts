@@ -187,7 +187,7 @@ export function validateCompanyProfile(p: CompanyProfile): FieldErrors {
  * Fields that materially affect whether a bid is accepted. Weighted, because
  * a missing CSD number is disqualifying while a missing trading name is not.
  */
-const COMPLETENESS_FIELDS: { key: keyof CompanyProfile; label: string; weight: number }[] = [
+export const COMPLETENESS_FIELDS: { key: keyof CompanyProfile; label: string; weight: number }[] = [
   { key: 'legalName', label: 'Registered name', weight: 2 },
   { key: 'companyType', label: 'Company type', weight: 1 },
   { key: 'registrationNumber', label: 'Registration number', weight: 2 },

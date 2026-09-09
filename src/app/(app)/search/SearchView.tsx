@@ -2,14 +2,19 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, ArrowUpDown, SearchX, Loader2, CloudOff } from 'lucide-react';
+import { SlidersHorizontal, ArrowUpDown, SearchX, Loader2, CloudOff, BookmarkPlus, Check } from 'lucide-react';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Chip } from '@/components/ui/Chip';
 import { TenderCard } from '@/components/tender/TenderCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { DataSourceNotice } from '@/components/ui/DataSourceNotice';
 import { MenuButton } from '@/components/nav/MenuButton';
+import { cn } from '@/lib/cn';
 import { useSavedTenders } from '@/lib/saved-store';
+import { useSavedSearches } from '@/lib/saved-searches-store';
+import { useTier } from '@/lib/tier-store';
+import { useUpgrade } from '@/components/tier/UpgradeSheet';
+import { paramsFromUrl, hasAny } from '@/lib/saved-searches';
 import type { DataSource } from '@/lib/tenders';
 import type { SortOption, TenderWithUserState } from '@/types/tender';
 
@@ -61,7 +66,15 @@ export function SearchView({
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState(initialQuery);
-  const { isSaved, toggleSaved } = useSavedTenders();
+  const { session, isSaved, toggleSaved } = useSavedTenders();
+  const searches = useSavedSearches();
+  const { limit } = useTier();
+  const { openUpgrade } = useUpgrade();
+
+  // The exact filter state of the current URL — what "Save search" captures.
+  const currentSearch = paramsFromUrl(params);
+  const thisSearchSaved = searches.isSaved(currentSearch);
+  const searchCap = limit('saved-searches') ?? 3;
 
   /** Clears every filter AND the query state, so the box can't lie about it. */
   const clearAll = () => {
@@ -180,7 +193,7 @@ export function SearchView({
       <div className="px-5 pt-3.5">
         <DataSourceNotice source={source} notice={notice} />
 
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between gap-3">
           <p className="text-meta text-ink-2">
             {pending ? (
               <span className="flex items-center gap-1.5">
@@ -195,11 +208,40 @@ export function SearchView({
               </>
             )}
           </p>
-          {totalPages > 1 && (
-            <span className="text-caption text-ink-3">
-              Page {page} of {totalPages}
-            </span>
-          )}
+          <span className="flex shrink-0 items-center gap-2">
+            {totalPages > 1 && (
+              <span className="hidden text-caption text-ink-3 sm:inline">
+                Page {page} of {totalPages}
+              </span>
+            )}
+            {session.signedIn && hasAny(currentSearch) && (
+              thisSearchSaved ? (
+                <button
+                  type="button"
+                  onClick={() => router.push('/saved?tab=searches')}
+                  className="flex h-8 items-center gap-1.5 rounded-full border border-line bg-white px-3 text-[12px] font-semibold text-navy"
+                >
+                  <Check size={13} strokeWidth={2.6} aria-hidden />
+                  Saved — open
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (searches.count >= searchCap) {
+                      openUpgrade('saved-searches', { why: 'Basic saves up to 3 searches — Pro keeps every filter set you run, ready to re-run.' });
+                      return;
+                    }
+                    searches.add('', currentSearch);
+                  }}
+                  className="flex h-8 items-center gap-1.5 rounded-full border border-line bg-white px-3 text-[12px] font-semibold text-ink-2 transition-colors hover:border-navy hover:text-navy"
+                >
+                  <BookmarkPlus size={13} strokeWidth={2.1} aria-hidden />
+                  Save search
+                </button>
+              )
+            )}
+          </span>
         </div>
 
         {source === 'error' && results.length === 0 && !pending ? (

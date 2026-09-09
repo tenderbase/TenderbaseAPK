@@ -11,12 +11,14 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { MenuButton } from '@/components/nav/MenuButton';
 import { useSavedTenders } from '@/lib/saved-store';
+import { useSavedSearches } from '@/lib/saved-searches-store';
 import { useTier } from '@/lib/tier-store';
 import { PlanChip } from '@/components/ui/PlanChip';
 import { loadPreferences } from '@/lib/preferences';
 import { fetchPreferences } from '@/lib/preferences-remote';
 import { loadProfile } from '@/lib/company';
 import { fetchProfile } from '@/lib/company-remote';
+import { calculateCompleteness } from '@/types/company';
 
 function Row({
   icon: Icon,
@@ -97,23 +99,28 @@ export interface ProfileIdentity {
 export default function ProfileView({ identity }: { identity: ProfileIdentity }) {
   const router = useRouter();
   const { session, count: savedCount } = useSavedTenders();
+  const searches = useSavedSearches();
   const { tier, trial } = useTier();
   const [categoryCount, setCategoryCount] = useState(0);
   const [companyName, setCompanyName] = useState<string | null>(null);
+  const [profilePct, setProfilePct] = useState(0);
 
   // Real numbers only: categories come from preferences, the company name
-  // from the company profile. Nothing is hardcoded to a demo persona.
+  // and completeness from the company profile. Nothing hardcoded.
   useEffect(() => {
     setCategoryCount(loadPreferences().categories.length);
     const local = loadProfile();
     setCompanyName(local.legalName?.trim() || null);
+    setProfilePct(local.legalName?.trim() ? calculateCompleteness(local).percent : 0);
 
     if (session.signedIn) {
       void fetchPreferences().then((remote) => {
         if (remote) setCategoryCount(remote.categories.length);
       });
       void fetchProfile().then((remote) => {
-        if (remote?.legalName) setCompanyName(remote.legalName);
+        if (!remote) return;
+        if (remote.legalName?.trim()) setCompanyName(remote.legalName.trim());
+        setProfilePct(remote.legalName?.trim() ? calculateCompleteness(remote).percent : 0);
       });
     }
   }, [session.signedIn]);
@@ -186,6 +193,7 @@ export default function ProfileView({ identity }: { identity: ProfileIdentity })
             {[
               [session.loading ? '—' : String(savedCount), 'Saved'],
               [String(categoryCount), 'Categories'],
+              [session.loading ? '—' : String(searches.count), 'Searches'],
             ].map(([v, l], i) => (
               <div key={l} className={cn('flex-1 text-center', i > 0 && 'border-l border-line')}>
                 <dt className="sr-only">{l}</dt>
@@ -206,9 +214,28 @@ export default function ProfileView({ identity }: { identity: ProfileIdentity })
             title="Company Profile"
             sub={companyName ?? (signedIn ? 'Not set up yet' : 'Set up to match tenders')}
             href="/profile/company"
+            right={
+              companyName ? (
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <span
+                    className={cn(
+                      'h-2 w-2 rounded-full',
+                      profilePct >= 100 ? 'bg-open' : profilePct >= 60 ? 'bg-soon' : 'bg-urgent',
+                    )}
+                    aria-hidden
+                  />
+                  <span className="text-caption font-semibold tabular-nums text-ink-2">{profilePct}%</span>
+                </span>
+              ) : undefined
+            }
           />
           <Row icon={SlidersHorizontal} title="Tender Preferences" sub="Categories, provinces and alerts" href="/profile/preferences" />
-          <Row icon={Bookmark} title="Saved Searches" soon />
+          <Row
+            icon={Bookmark}
+            title="Saved Searches"
+            href="/saved?tab=searches"
+            sub={searches.count > 0 ? `${searches.count} saved on this device` : 'Searches you save on Discover'}
+          />
           <Row
             icon={Crown}
             title="Subscription & Pro"
