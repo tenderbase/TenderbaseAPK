@@ -1,6 +1,10 @@
 import Link from 'next/link';
 
-/** Generic 404 for unknown routes — never claims the page was a tender. */
+/**
+ * Root 404 (server component — a client or nested not-found boundary renders
+ * but does not set the 404 status in this Next version, verified in dev and
+ * prod, so keep this one simple and static).
+ */
 export default function NotFound() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center px-8 text-center">

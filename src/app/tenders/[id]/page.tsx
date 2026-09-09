@@ -6,7 +6,7 @@ export const revalidate = 300;
 
 export async function generateMetadata({ params }: { params: { id: string } }) {
   const result = await getTender(params.id);
-  if (!result) return { title: 'Tender not found · TenderBase' };
+  if (!result) notFound();
   if (result.source === 'error') return { title: 'Service unavailable · TenderBase' };
   return {
     title: `${result.tender.title} · TenderBase`,
