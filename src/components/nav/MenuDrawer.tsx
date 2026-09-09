@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  X, Home, Search, Bookmark, Bell, User, Sparkles, Building2,
+  X, Home, Search, Bookmark, Bell, Newspaper, User, Sparkles, Building2,
   SlidersHorizontal, Crown, HelpCircle, ShieldCheck, LogOut, ChevronRight,
   type LucideIcon,
 } from 'lucide-react';
@@ -43,6 +43,7 @@ const PRIMARY: Item[] = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/search', label: 'Search tenders', icon: Search },
   { href: '/saved', label: 'Saved', icon: Bookmark },
+  { href: '/news', label: 'News', icon: Newspaper },
   { href: '/alerts', label: 'Alerts', icon: Bell },
 ];
 

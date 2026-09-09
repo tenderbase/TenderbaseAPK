@@ -64,7 +64,9 @@ export const FEATURE_ACCESS: Record<FeatureKey, Tier> = {
 
 /** Numeric limits by tier (undefined = unlimited / not offered). */
 export const LIMITS: Record<'free' | 'basic' | 'pro', Partial<Record<FeatureKey, number>>> = {
-  free: { 'ai-quick': 2, saved: 0, 'org-watch': 0 },
+  // `news-basic` doubles as the news category allowance: guests read the
+  // first 2 rails, Basic the first 3 (blueprint §5.7).
+  free: { 'ai-quick': 2, saved: 0, 'org-watch': 0, 'news-basic': 2 },
   basic: { 'ai-quick': 10, saved: 50, 'saved-searches': 3, 'org-watch': 1, 'news-basic': 3, 'ai-deep': 1 },
   pro: {},
 };
