@@ -198,7 +198,7 @@ export function NewsView() {
   const notice = envelope?.notice;
 
   return (
-    <main>
+    <main className="pb-24">
       <header className="border-b border-line bg-white px-5 pb-3 pt-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">

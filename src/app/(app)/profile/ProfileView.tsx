@@ -128,7 +128,7 @@ export default function ProfileView({ identity }: { identity: ProfileIdentity })
   const signedIn = session.signedIn;
 
   return (
-    <main>
+    <main className="pb-24">
       <header className="border-b border-line bg-white px-5 pb-3 pt-1.5">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">

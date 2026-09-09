@@ -45,7 +45,7 @@ export default async function BriefingPage() {
   const notice = latest.notice ?? stats.notice;
 
   return (
-    <main className="pb-8">
+    <main className="pb-24">
       <header className="flex items-center gap-3 border-b border-line bg-white px-4 py-2">
         <span className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-blue-soft text-navy">
           <Sparkles size={17} strokeWidth={2} aria-hidden />

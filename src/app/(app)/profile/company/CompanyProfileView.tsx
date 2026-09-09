@@ -167,7 +167,7 @@ export function CompanyProfileView() {
   const err = (k: keyof CompanyProfile) => (showErrors ? errors[k] : undefined);
 
   return (
-    <main className={cn(isEditing && 'pb-28')}>
+    <main className={cn(isEditing ? 'pb-28' : 'pb-24')}>
       <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-line bg-white px-4 py-2">
         <button
           onClick={() => (isEditing ? cancelEdit() : router.back())}

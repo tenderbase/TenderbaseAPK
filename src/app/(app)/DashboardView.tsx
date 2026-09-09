@@ -147,7 +147,7 @@ export function DashboardView({
   const showReasonsLocked = !can('matches-reasons');
 
   return (
-    <main>
+    <main className="pb-24">
       <header className="sticky top-0 z-30 border-b border-line bg-white px-5 pb-4 pt-2">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
