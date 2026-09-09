@@ -13,6 +13,9 @@ import { useDrawer } from '@/components/nav/DrawerProvider';
 import { createClient } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/supabase-config';
 import { useSavedTenders } from '@/lib/saved-store';
+import { useTier } from '@/lib/tier-store';
+import { useUpgrade } from '@/components/tier/UpgradeSheet';
+import { PlanChip } from '@/components/ui/PlanChip';
 
 /**
  * Slide-in navigation drawer.
@@ -53,7 +56,7 @@ const ACCOUNT: Item[] = [
   // stale here the moment it is edited.
   { href: '/profile/company', label: 'Company profile', icon: Building2 },
   { href: '/profile/preferences', label: 'Tender preferences', icon: SlidersHorizontal },
-  { href: '/settings', label: 'Subscription', icon: Crown, soon: true },
+  { href: '/pro', label: 'Subscription & Pro', icon: Crown },
 ];
 
 const SUPPORT: Item[] = [
@@ -66,6 +69,8 @@ export function MenuDrawer() {
   const pathname = usePathname();
   const router = useRouter();
   const { session } = useSavedTenders();
+  const { tier, trial } = useTier();
+  const { openUpgrade } = useUpgrade();
   const [signingOut, setSigningOut] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -210,7 +215,10 @@ export function MenuDrawer() {
               </>
             )}
           </span>
-          <ChevronRight size={17} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />
+          <span className="flex shrink-0 items-center gap-1.5">
+            {session.signedIn && <PlanChip tier={tier} />}
+            <ChevronRight size={17} strokeWidth={2} className="text-ink-3" aria-hidden />
+          </span>
         </Link>
 
         <nav aria-label="Drawer" className="flex-1 overflow-y-auto overscroll-contain px-3 py-3">
@@ -221,6 +229,45 @@ export function MenuDrawer() {
         </nav>
 
         <div className="border-t border-line px-3 py-2.5 pb-[calc(env(safe-area-inset-bottom)+10px)]">
+          {tier !== 'pro' && (
+            <button
+              type="button"
+              tabIndex={isOpen ? undefined : -1}
+              onClick={() =>
+                openUpgrade('ai-deep', {
+                  headline: 'Go Pro',
+                  why: 'One subscription unlocks every Pro feature — deep AI, full matches, push and all news feeds.',
+                  bullets: [
+                    'Deep AI summaries & follow-ups on every tender',
+                    "Full Today's Matches with reasons",
+                    'Instant-match push + every news feed',
+                  ],
+                })
+              }
+              className="mb-2 flex w-full items-center gap-2.5 rounded-[11px] bg-pro px-3 py-2.5 text-left text-[#3d3205]"
+            >
+              <Crown size={17} strokeWidth={2.2} className="shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13.5px] font-bold tracking-[-0.01em]">Go Pro</span>
+                <span className="block text-[10.5px] font-medium opacity-80">
+                  {tier === 'free' ? 'Free 14-day trial — no charge today' : 'Unlimited AI, matches & push'}
+                </span>
+              </span>
+            </button>
+          )}
+          {tier === 'pro' && trial.active && (
+            <Link
+              href="/pro"
+              tabIndex={isOpen ? undefined : -1}
+              className="mb-2 flex w-full items-center gap-2.5 rounded-[11px] bg-pro-soft px-3 py-2.5 text-left text-[#7a610f]"
+            >
+              <Crown size={17} strokeWidth={2.2} className="shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-bold tracking-[-0.01em]">Trial · {trial.daysLeft}d left</span>
+                <span className="block text-[10.5px] font-medium opacity-80">Manage in Pro hub</span>
+              </span>
+            </Link>
+          )}
           {session.signedIn && (
             <button
               type="button"

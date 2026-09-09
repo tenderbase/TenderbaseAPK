@@ -11,6 +11,8 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { MenuButton } from '@/components/nav/MenuButton';
 import { useSavedTenders } from '@/lib/saved-store';
+import { useTier } from '@/lib/tier-store';
+import { PlanChip } from '@/components/ui/PlanChip';
 import { loadPreferences } from '@/lib/preferences';
 import { fetchPreferences } from '@/lib/preferences-remote';
 import { loadProfile } from '@/lib/company';
@@ -95,6 +97,7 @@ export interface ProfileIdentity {
 export default function ProfileView({ identity }: { identity: ProfileIdentity }) {
   const router = useRouter();
   const { session, count: savedCount } = useSavedTenders();
+  const { tier, trial } = useTier();
   const [categoryCount, setCategoryCount] = useState(0);
   const [companyName, setCompanyName] = useState<string | null>(null);
 
@@ -155,8 +158,14 @@ export default function ProfileView({ identity }: { identity: ProfileIdentity })
             <p className="mt-0.5 truncate text-meta text-ink-2">
               {signedIn ? identity.email : 'Not signed in'}
             </p>
-            <span className="mt-1.5 inline-flex h-[22px] items-center rounded-md bg-blue-soft px-2 text-[11.5px] font-semibold text-blue">
-              {signedIn ? 'Free account' : 'Free browsing'}
+            <span className="mt-1.5 inline-flex items-center gap-1.5">
+              <PlanChip tier={tier} />
+              {tier === 'pro' && trial.active && (
+                <span className="text-[11px] font-medium text-soon">
+                  Trial · {trial.daysLeft}d left
+                </span>
+              )}
+              {!signedIn && <span className="text-[11px] text-ink-3">Guest</span>}
             </span>
           </div>
         </div>
@@ -200,7 +209,20 @@ export default function ProfileView({ identity }: { identity: ProfileIdentity })
           />
           <Row icon={SlidersHorizontal} title="Tender Preferences" sub="Categories, provinces and alerts" href="/profile/preferences" />
           <Row icon={Bookmark} title="Saved Searches" soon />
-          <Row icon={Crown} title="Subscription & Billing" soon />
+          <Row
+            icon={Crown}
+            title="Subscription & Pro"
+            href="/pro"
+            sub={
+              tier === 'pro'
+                ? trial.active
+                  ? `Pro · trial ${trial.daysLeft} day${trial.daysLeft === 1 ? '' : 's'} left`
+                  : 'Pro active — manage plan'
+                : tier === 'basic'
+                  ? 'Upgrade for unlimited AI & matches'
+                  : 'Guest — see what Pro adds'
+            }
+          />
         </Group>
 
         <Group title="Intelligence">

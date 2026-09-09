@@ -2,6 +2,10 @@ import { BottomNavigation } from '@/components/nav/BottomNavigation';
 import { DrawerProvider } from '@/components/nav/DrawerProvider';
 import { MenuDrawer } from '@/components/nav/MenuDrawer';
 import { SavedProvider } from '@/lib/saved-store';
+import { TierProvider } from '@/lib/tier-store';
+import { UpgradeProvider } from '@/components/tier/UpgradeSheet';
+import { TierPreview } from '@/components/tier/TierPreview';
+import { getServerTier } from '@/lib/tier-server';
 
 /**
  * The authenticated shell: drawer state + shared saved/session store,
@@ -10,19 +14,30 @@ import { SavedProvider } from '@/lib/saved-store';
  * the group because a notFound() thrown inside a route group does not set
  * the 404 status in this Next version (verified with probes in dev and
  * prod), while the same throw outside the group does.
+ *
+ * Provider order matters: TierProvider seeds from cookies server-side,
+ * UpgradeProvider gives every screen the universal Pro gate, SavedProvider
+ * uses both (its cap enforcement opens the upgrade sheet).
  */
-export function AppShell({ children }: { children: React.ReactNode }) {
+export async function AppShell({ children }: { children: React.ReactNode }) {
+  const { tier, trialEnd } = getServerTier();
+
   return (
     <DrawerProvider>
-      <SavedProvider>
-        <div className="min-h-screen">
-          <div className="app-scroll">
-            <div className="mx-auto max-w-3xl md:max-w-5xl">{children}</div>
-          </div>
-          <BottomNavigation />
-          <MenuDrawer />
-        </div>
-      </SavedProvider>
+      <TierProvider initialTier={tier} initialTrialEnd={trialEnd}>
+        <UpgradeProvider>
+          <SavedProvider>
+            <div className="min-h-screen">
+              <div className="app-scroll">
+                <div className="mx-auto max-w-3xl md:max-w-5xl">{children}</div>
+              </div>
+              <BottomNavigation />
+              <MenuDrawer />
+            </div>
+            <TierPreview />
+          </SavedProvider>
+        </UpgradeProvider>
+      </TierProvider>
     </DrawerProvider>
   );
 }

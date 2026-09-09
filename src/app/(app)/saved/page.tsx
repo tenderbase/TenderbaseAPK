@@ -1,11 +1,14 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bookmark, LogIn } from 'lucide-react';
+import { Bookmark, Crown, LogIn } from 'lucide-react';
 import { TenderCard } from '@/components/tender/TenderCard';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Meter } from '@/components/ui/Meter';
 import { getStatus, daysUntil } from '@/lib/format';
 import { useSavedTenders } from '@/lib/saved-store';
+import { useTier } from '@/lib/tier-store';
+import { useUpgrade } from '@/components/tier/UpgradeSheet';
 import { cn } from '@/lib/cn';
 import { MenuButton } from '@/components/nav/MenuButton';
 
@@ -23,6 +26,10 @@ export default function SavedPage() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('All');
   const { session, saved, toggleSaved } = useSavedTenders();
+  const { tier, isPro } = useTier();
+  const { openUpgrade } = useUpgrade();
+
+  const savedCap = tier === 'free' ? 0 : 50; // Basic plan cap; Pro unlimited
 
   // Session still resolving: render the shell only, so guests don't see a
   // flash of "no saved tenders" before the honest sign-in prompt.
@@ -67,6 +74,34 @@ export default function SavedPage() {
     <main>
       <Header tab={tab} setTab={setTab} savedCount={saved.length} />
       <div className="px-5 pt-3.5">
+        {!isPro && session.signedIn && saved.length > 0 && (
+          <div className="mb-4 rounded-[14px] border border-line bg-white p-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[13px] font-semibold text-ink">
+                {saved.length >= savedCap ? 'Saved-tender limit reached' : 'Saved tenders'}
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  openUpgrade('saved', {
+                    why: 'Pro saved tenders are unlimited — keep every opportunity in one place.',
+                  })
+                }
+                className="flex shrink-0 items-center gap-1 text-[12.5px] font-bold text-[#7a610f]"
+              >
+                <Crown size={13} strokeWidth={2.2} aria-hidden />
+                Go Pro
+              </button>
+            </div>
+            <Meter
+              used={saved.length}
+              max={savedCap}
+              label={`${saved.length} of ${savedCap} on Basic`}
+              className="mt-2"
+            />
+          </div>
+        )}
+
         {visible.length === 0 ? (
           <EmptyState
             icon={Bookmark}

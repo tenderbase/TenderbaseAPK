@@ -18,6 +18,8 @@ import {
   persistSavedTender,
   type SavedRow,
 } from '@/lib/saved-remote';
+import { useTier } from '@/lib/tier-store';
+import { useUpgrade } from '@/components/tier/UpgradeSheet';
 import type { TenderWithUserState } from '@/types/tender';
 
 /**
@@ -72,6 +74,8 @@ function initialsFor(name: string | null | undefined, email: string | null | und
 export function SavedProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { limit, isPro } = useTier();
+  const { openUpgrade } = useUpgrade();
 
   const [session, setSession] = useState<SessionIdentity>({
     signedIn: false,
@@ -135,6 +139,19 @@ export function SavedProvider({ children }: { children: ReactNode }) {
       }
 
       const isOn = saved.some((r) => r.tenderId === tender.id);
+
+      // Saving beyond the plan cap? Open the honest Pro gate instead of
+      // silently dropping the tap (basic: 50, free: 0).
+      if (!isOn && !isPro) {
+        const cap = limit('saved') ?? Infinity;
+        if (saved.length >= cap) {
+          openUpgrade('saved', {
+            why: 'You have reached your saved-tender limit. Pro saves are unlimited.',
+          });
+          return;
+        }
+      }
+
       setSaved((prev) =>
         isOn ? prev.filter((r) => r.tenderId !== tender.id) : [{ tenderId: tender.id, savedAt: new Date().toISOString(), tender }, ...prev],
       );
@@ -144,7 +161,7 @@ export function SavedProvider({ children }: { children: ReactNode }) {
         void persistSavedTender(tender);
       }
     },
-    [session.signedIn, saved, pathname, router],
+    [session.signedIn, saved, isPro, limit, openUpgrade, pathname, router],
   );
 
   const value = useMemo<SavedContextValue>(
