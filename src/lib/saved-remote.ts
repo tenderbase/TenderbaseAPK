@@ -1,7 +1,7 @@
 'use client';
 
 import { createClient } from '@/lib/supabase';
-import { isSupabaseConfigured } from '@/lib/supabase-config';
+import { currentSessionUserId } from '@/lib/supabase-user';
 import type { TenderWithUserState } from '@/types/tender';
 
 /**
@@ -26,17 +26,6 @@ interface DbRow {
   tender_id: string;
   tender_json: unknown;
   saved_at: string;
-}
-
-/** Current signed-in user id, or null when unconfigured / signed out. */
-export async function currentSessionUserId(): Promise<string | null> {
-  if (!isSupabaseConfigured) return null;
-  try {
-    const { data } = await createClient().auth.getUser();
-    return data.user?.id ?? null;
-  } catch {
-    return null;
-  }
 }
 
 export async function fetchSavedRows(): Promise<SavedRow[]> {
