@@ -59,7 +59,7 @@ export default async function NewsArticlePage({ params }: { params: { id: string
         >
           <ArrowLeft size={20} strokeWidth={1.9} aria-hidden />
         </Link>
-        <NewsBookmarkButton id={item.id} />
+        <NewsBookmarkButton item={item} />
       </header>
 
       <article className="px-5 pb-24">

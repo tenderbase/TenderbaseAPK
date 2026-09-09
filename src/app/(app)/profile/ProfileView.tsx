@@ -234,7 +234,7 @@ export default function ProfileView({ identity }: { identity: ProfileIdentity })
             icon={Bookmark}
             title="Saved Searches"
             href="/saved?tab=searches"
-            sub={searches.count > 0 ? `${searches.count} saved on this device` : 'Searches you save on Discover'}
+            sub={searches.count > 0 ? `${searches.count} saved — synced to your account` : 'Searches you save on Discover'}
           />
           <Row
             icon={Crown}

@@ -24,10 +24,10 @@ import { MenuButton } from '@/components/nav/MenuButton';
 
 /**
  * Saved hub (blueprint §5.6): Tenders · Searches · Documents · Organisations,
- * each with real counts from real data. Tenders are the remote-synced saved
- * store; Searches are device-local until the saved-search account table ships
- * (stated honestly on the tab); Documents and Organisations are derived live
- * from your saved tenders. Nothing here is invented.
+ * each with real counts from real data. Tenders and saved searches sync to
+ * the account (`saved_tenders`, `saved_searches`); Documents and
+ * Organisations are derived live from your saved tenders. Nothing here is
+ * invented.
  */
 export function SavedHubView({ initialTab }: { initialTab: SavedHubTab }) {
   const router = useRouter();
@@ -241,7 +241,7 @@ function SearchesPanel() {
           onAction={() => router.push('/search')}
         />
         <p className="mt-3 text-center text-caption leading-[17px] text-ink-3">
-          Saved searches live on this device until account sync ships.
+          Saved searches sync to your account — save on one device, run them on any.
         </p>
       </>
     );
@@ -260,8 +260,7 @@ function SearchesPanel() {
         ))}
       </ul>
       <p className="mt-3 text-center text-caption leading-[17px] text-ink-3">
-        Searches live on this device until account sync ships. Notify-on-new-results arrives
-        with the saved-search release.
+        Synced to your account. Notify-on-new-results is still on the roadmap.
       </p>
     </>
   );

@@ -387,7 +387,7 @@ export function NewsView() {
             title={onlySaved ? 'No saved stories yet' : rail === 'SARS_Tax' ? 'No feed connected yet' : 'No stories right now'}
             description={
               onlySaved
-                ? 'Tap the bookmark on any story and it will wait for you here — saved on this device until account sync ships.'
+                ? 'Tap the bookmark on any story and it will wait for you here — saved to your account, on every device.'
                 : rail === 'SARS_Tax'
                   ? "SARS doesn't publish a stable RSS feed yet. With Pro you can connect one as a custom feed."
                   : (notice ?? 'This category is quiet right now — check back soon.')
@@ -492,7 +492,7 @@ function NewsCard({ item, facets }: { item: RelevantNewsItem; facets: FacetEntry
             )}
           </span>
         </Link>
-        <NewsBookmarkButton id={item.id} />
+        <NewsBookmarkButton item={item} />
       </div>
       {cross && (
         <Link

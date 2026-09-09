@@ -82,9 +82,9 @@ export function mergeUnique(local: string[], remote: string[]): string[] {
   return out;
 }
 
-export interface SettingsReconcile {
+export interface SettingsReconcile<T extends string = string> {
   /** The list the store should adopt as its state. */
-  adopt: string[] | null;
+  adopt: T[] | null;
   /** True when the remote has no row and the local list must be pushed. */
   push: boolean;
 }
@@ -95,10 +95,10 @@ export interface SettingsReconcile {
  * explicit state from any device, so it wins and nothing is pushed; only a
  * first-time sync (no remote row) pushes the local list.
  */
-export function reconcileSettings(
-  local: string[] | null,
-  remote: string[] | null,
-): SettingsReconcile {
+export function reconcileSettings<T extends string>(
+  local: T[] | null,
+  remote: T[] | null,
+): SettingsReconcile<T> {
   if (remote !== null) return { adopt: remote, push: false };
   return { adopt: local, push: local !== null && local.length > 0 };
 }

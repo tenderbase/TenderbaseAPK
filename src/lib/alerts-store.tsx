@@ -23,6 +23,9 @@ import {
 } from '@/lib/alerts';
 import { useSavedTenders } from '@/lib/saved-store';
 import { useTier } from '@/lib/tier-store';
+import { reconcileSettings } from '@/lib/sync-core';
+import { fetchMutedAlertKinds, persistMutedAlertKinds } from '@/lib/alert-settings-remote';
+import { isSupabaseConfigured } from '@/lib/supabase-config';
 
 const STORE_KEY = 'tb_alerts_v1';
 const MUTE_KEY = 'tb_alerts_muted_v1';
@@ -63,17 +66,25 @@ const AlertsContext = createContext<AlertsContextValue | null>(null);
 /**
  * In-app alerts store — real events only (deadline rows for saved tenders,
  * trial-expiry system row). Match rows are logged by AlertsView once it
- * detects new high scorers; nothing here invents content. Persists on this
- * device until the notifications backend ships; every surface that consumes
- * it (nav bubble, inbox, settings) reads the same state.
+ * detects new high scorers; nothing here invents content.
+ *
+ * Entries persist on this device (the inbox re-derives its deadline rows
+ * from the synced saved list; event read-state stays per device). The muted
+ * kinds, however, sync to `alert_settings` (migration 0005): once an
+ * account row exists it wins on sign-in, a first sign-in pushes this
+ * device's mutes, and every toggle writes straight through.
  */
 export function AlertsProvider({ children }: { children: ReactNode }) {
   const { session, saved } = useSavedTenders();
   const { tier, trial } = useTier();
+  const signedIn = session.signedIn && !session.loading;
 
   const [entries, setEntries] = useState<AlertEntry[]>(() => load<AlertEntry[]>(STORE_KEY, []));
   const [muted, setMuted] = useState<AlertKind[]>(() => load<AlertKind[]>(MUTE_KEY, []));
   const hydrated = useRef(false);
+  const mutedSynced = useRef(false);
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
 
   useEffect(() => {
     save(STORE_KEY, entries);
@@ -81,6 +92,45 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     save(MUTE_KEY, muted);
   }, [muted]);
+
+  // Mute-list sync: adopt the account row once it exists; push this
+  // device's list on a first sync. Undefined (fetch failed) is retried on
+  // the next 'online' event rather than treated as "no row".
+  useEffect(() => {
+    if (!signedIn || !isSupabaseConfigured) {
+      mutedSynced.current = false;
+      return;
+    }
+    if (mutedSynced.current) return;
+    let cancelled = false;
+    const attempt = async () => {
+      if (mutedSynced.current || cancelled) return;
+      const remote = await fetchMutedAlertKinds();
+      if (cancelled || remote === undefined) return;
+      const { adopt, push } = reconcileSettings(mutedRef.current, remote);
+      if (push) {
+        const ok = await persistMutedAlertKinds(adopt ?? []);
+        if (cancelled) return;
+        if (!ok) return;
+      }
+      mutedSynced.current = true;
+      setMuted(adopt ?? []);
+    };
+    void attempt();
+    const onOnline = () => void attempt();
+    window.addEventListener('online', onOnline);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', onOnline);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedIn]);
+
+  // Toggles write through to the account once the merge has run.
+  useEffect(() => {
+    if (!signedIn || !mutedSynced.current || !isSupabaseConfigured) return;
+    void persistMutedAlertKinds(muted);
+  }, [muted, signedIn]);
 
   // Re-derive deadline + trial rows whenever saves, tier or the session
   // change (or once at mount). Pure merge — identity-stable when nothing

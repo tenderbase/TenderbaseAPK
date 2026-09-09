@@ -3,22 +3,24 @@
 import { Bookmark } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useNewsBookmarks } from '@/lib/news-bookmarks';
+import type { NewsItem } from '@/types/news';
 
 /**
- * Bookmark toggle shared by feed cards and the article reader. Honest about
- * scope: bookmarks live on this device until account sync ships (the store
- * label says so) — the action itself is real and immediate.
+ * Bookmark toggle shared by feed cards and the article reader. The full
+ * story item is passed so the account snapshot is available when syncing
+ * (`news_bookmarks` table) — the action itself is real and immediate,
+ * signed-in or not.
  */
-export function NewsBookmarkButton({ id, className }: { id: string; className?: string }) {
+export function NewsBookmarkButton({ item, className }: { item: NewsItem; className?: string }) {
   const { has, toggle } = useNewsBookmarks();
-  const saved = has(id);
+  const saved = has(item.id);
   return (
     <button
       type="button"
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        toggle(id);
+        toggle(item);
       }}
       aria-pressed={saved}
       aria-label={saved ? 'Remove bookmark' : 'Bookmark story'}

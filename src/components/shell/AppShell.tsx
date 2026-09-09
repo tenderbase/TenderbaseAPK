@@ -2,6 +2,8 @@ import { BottomNavigation } from '@/components/nav/BottomNavigation';
 import { DrawerProvider } from '@/components/nav/DrawerProvider';
 import { MenuDrawer } from '@/components/nav/MenuDrawer';
 import { SavedProvider } from '@/lib/saved-store';
+import { SavedSearchesProvider } from '@/lib/saved-searches-store';
+import { NewsBookmarksProvider } from '@/lib/news-bookmarks';
 import { TierProvider } from '@/lib/tier-store';
 import { AlertsProvider } from '@/lib/alerts-store';
 import { UpgradeProvider } from '@/components/tier/UpgradeSheet';
@@ -18,8 +20,10 @@ import { getServerTier } from '@/lib/tier-server';
  *
  * Provider order matters: TierProvider seeds from cookies server-side,
  * UpgradeProvider gives every screen the universal Pro gate, SavedProvider
- * uses both (its cap enforcement opens the upgrade sheet), and
- * AlertsProvider derives its real deadline/trial events from those stores.
+ * uses both (its cap enforcement opens the upgrade sheet). Saved-searches,
+ * news-bookmarks and alert settings sit inside SavedProvider because their
+ * account sync keys off the same session; AlertsProvider derives its real
+ * deadline/trial events from those stores.
  */
 export async function AppShell({ children }: { children: React.ReactNode }) {
   const { tier, trialEnd } = getServerTier();
@@ -29,16 +33,20 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       <TierProvider initialTier={tier} initialTrialEnd={trialEnd}>
         <UpgradeProvider>
           <SavedProvider>
-            <AlertsProvider>
-              <div className="min-h-screen">
-                <div className="app-scroll">
-                  <div className="mx-auto max-w-3xl md:max-w-5xl">{children}</div>
-                </div>
-                <BottomNavigation />
-                <MenuDrawer />
-              </div>
-              <TierPreview />
-            </AlertsProvider>
+            <SavedSearchesProvider>
+              <NewsBookmarksProvider>
+                <AlertsProvider>
+                  <div className="min-h-screen">
+                    <div className="app-scroll">
+                      <div className="mx-auto max-w-3xl md:max-w-5xl">{children}</div>
+                    </div>
+                    <BottomNavigation />
+                    <MenuDrawer />
+                  </div>
+                  <TierPreview />
+                </AlertsProvider>
+              </NewsBookmarksProvider>
+            </SavedSearchesProvider>
           </SavedProvider>
         </UpgradeProvider>
       </TierProvider>

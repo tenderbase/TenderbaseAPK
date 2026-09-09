@@ -30,10 +30,16 @@ function mutedOf(raw: unknown): AlertKind[] {
   return out;
 }
 
-/** The account's muted kinds, or null when there is no row yet. */
-export async function fetchMutedAlertKinds(): Promise<AlertKind[] | null> {
+/**
+ * The account's muted kinds:
+ * - an array when a row exists (possibly empty),
+ * - null when the account has no row yet,
+ * - undefined when the fetch failed or there is no session — callers must
+ *   NOT treat that as "no row" (they would clobber an existing row).
+ */
+export async function fetchMutedAlertKinds(): Promise<AlertKind[] | null | undefined> {
   const userId = await currentSessionUserId();
-  if (!userId) return null;
+  if (!userId) return undefined;
 
   const { data, error } = await createClient()
     .from('alert_settings')
@@ -43,7 +49,7 @@ export async function fetchMutedAlertKinds(): Promise<AlertKind[] | null> {
 
   if (error) {
     console.error('[alert-settings] fetch failed:', error.message);
-    return null;
+    return undefined;
   }
   if (!data) return null;
   return mutedOf((data as DbRow).muted);

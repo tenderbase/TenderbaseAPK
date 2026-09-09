@@ -82,8 +82,7 @@ export default function NotificationsPage() {
             })}
           </ul>
           <p className="mt-1.5 px-1 text-[11px] leading-[15px] text-ink-3">
-            Toggles apply instantly to the Alerts tab and its badge. Saved on this device until
-            account sync ships.
+            Toggles apply instantly to the Alerts tab and its badge, and sync to your account.
           </p>
         </section>
 
