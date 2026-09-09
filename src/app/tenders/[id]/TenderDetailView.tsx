@@ -4,11 +4,15 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ChevronLeft, Share2, Bookmark, Building2, Check,
-  FileText, History, Download, Mail, Phone, User, ExternalLink,
+  FileText, History, Download, Mail, Phone, User, ExternalLink, Bell,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { StatusBadge, CategoryBadge } from '@/components/ui/StatusBadge';
 import { DataSourceNotice } from '@/components/ui/DataSourceNotice';
+import { AiSummaryPanel } from '@/components/tender/AiSummaryPanel';
+import { TenderMatchRow } from '@/components/tender/TenderMatchRow';
+import { CalendarAction } from '@/components/tender/CalendarAction';
+import { FollowSheet } from '@/components/tender/FollowSheet';
 import { useSavedTenders } from '@/lib/saved-store';
 import { formatValue, formatDate, daysUntil, getStatus, normaliseCase } from '@/lib/format';
 import type { DataSource } from '@/lib/tenders';
@@ -39,9 +43,11 @@ export function TenderDetailView({
   source: DataSource;
 }) {
   const router = useRouter();
-  const { isSaved, toggleSaved } = useSavedTenders();
+  const { session, isSaved, toggleSaved } = useSavedTenders();
   const [copiedLink, setCopiedLink] = useState(false);
+  const [followOpen, setFollowOpen] = useState(false);
   const saved = isSaved(tender.id);
+  const signedIn = session.signedIn;
   const remaining = tender.closingDate ? daysUntil(tender.closingDate) : null;
   const status = getStatus(tender);
 
@@ -66,7 +72,7 @@ export function TenderDetailView({
   };
 
   return (
-    <main className="pb-24">
+    <main className="pb-[196px] md:pb-32">
       <header className="sticky top-0 z-30 flex items-center justify-between bg-white px-4 py-2">
         <button
           onClick={() => router.back()}
@@ -161,7 +167,29 @@ export function TenderDetailView({
           </div>
         </dl>
 
-        <dl className="mt-2.5 divide-y divide-line rounded-[14px] border border-line bg-white px-3.5">
+        {/* Hero actions: real calendar export (Pro) + the upstream portal. */}
+        <div className="mt-2.5 flex gap-2">
+          <CalendarAction tender={tender} />
+          {tender.sourceUrl && (
+            <a
+              href={tender.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-md border border-line bg-white text-[13px] font-semibold text-ink"
+            >
+              View on eTenders
+              <ExternalLink size={14} strokeWidth={2.1} aria-hidden />
+            </a>
+          )}
+        </div>
+
+        {/* Personalised match row (signed-in) — v0 scorer, every reason true. */}
+        <TenderMatchRow tender={tender} />
+
+        {/* The AI showcase module — real notice facts + labelled preview rows. */}
+        <AiSummaryPanel tender={tender} amendments={amendments} />
+
+        <dl className="mt-4 divide-y divide-line rounded-[14px] border border-line bg-white px-3.5">
           {([
             ['Tender Number', tender.tenderNumber],
             // Verbatim upstream category — the badge above shows the app's
@@ -230,18 +258,6 @@ export function TenderDetailView({
           </section>
         )}
 
-        {tender.sourceUrl && (
-          <a
-            href={tender.sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2.5 flex items-center justify-center gap-1.5 rounded-[14px] border border-line bg-white py-3 text-meta font-semibold text-navy"
-          >
-            View on eTenders portal
-            <ExternalLink size={14} strokeWidth={2.1} aria-hidden />
-          </a>
-        )}
-
         {/* Real documents from the eTenders feed */}
         <section className="mt-4">
           <h2 className="mb-3 text-section font-semibold tracking-[-0.02em]">
@@ -303,6 +319,48 @@ export function TenderDetailView({
           </section>
         )}
       </div>
+
+      {/* Sticky actions: Save is real; Follow explains push honestly. */}
+      <footer
+        className={cn(
+          'fixed inset-x-0 z-40 border-t border-line bg-white/95 backdrop-blur',
+          'bottom-[calc(82px+env(safe-area-inset-bottom))] px-4 pb-3 pt-2.5',
+          'md:bottom-0 md:left-60',
+        )}
+      >
+        <div className="mx-auto flex max-w-3xl gap-2.5 md:max-w-5xl">
+          {signedIn && (
+            <button
+              type="button"
+              onClick={() => setFollowOpen(true)}
+              className="flex h-[46px] flex-1 items-center justify-center gap-2 rounded-md border border-line bg-white text-[14.5px] font-semibold text-ink"
+            >
+              <Bell size={17} strokeWidth={1.9} aria-hidden />
+              Follow
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => toggleSaved(tender)}
+            aria-pressed={saved}
+            className={cn(
+              'flex h-[46px] flex-1 items-center justify-center gap-2 rounded-md text-[14.5px] font-semibold text-white transition-colors',
+              saved ? 'bg-open' : 'bg-navy',
+            )}
+          >
+            <Bookmark size={17} strokeWidth={2} fill={saved ? 'currentColor' : 'none'} aria-hidden />
+            {saved ? 'Saved' : 'Save tender'}
+          </button>
+        </div>
+      </footer>
+
+      <FollowSheet
+        open={followOpen}
+        onClose={() => setFollowOpen(false)}
+        tender={tender}
+        saved={saved}
+        onToggleSave={toggleSaved}
+      />
     </main>
   );
 }
