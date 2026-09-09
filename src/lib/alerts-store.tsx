@@ -106,8 +106,9 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     const attempt = async () => {
       if (mutedSynced.current || cancelled) return;
       const remote = await fetchMutedAlertKinds();
-      if (cancelled || remote === undefined) return;
-      const { adopt, push } = reconcileSettings(mutedRef.current, remote);
+      if (cancelled) return;
+      const { adopt, push, unresolved } = reconcileSettings(mutedRef.current, remote);
+      if (unresolved) return; // fetch failed — retry on next 'online', touch nothing
       if (push) {
         const ok = await persistMutedAlertKinds(adopt ?? []);
         if (cancelled) return;

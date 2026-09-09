@@ -87,18 +87,26 @@ export interface SettingsReconcile<T extends string = string> {
   adopt: T[] | null;
   /** True when the remote has no row and the local list must be pushed. */
   push: boolean;
+  /**
+   * True when the remote state is UNKNOWN (fetch failed / no session) —
+   * callers must not touch local or remote state and should retry later.
+   * Treating an unknown as "no row" would clobber an existing account row.
+   */
+  unresolved: boolean;
 }
 
 /**
  * Whole-row reconciliation for single-row-per-user settings (alert mute
  * list). If the account already has a row, that row is the most recent
  * explicit state from any device, so it wins and nothing is pushed; only a
- * first-time sync (no remote row) pushes the local list.
+ * first-time sync (no remote row) pushes the local list. `undefined`
+ * remote state means "unknown" — nothing is adopted or pushed.
  */
 export function reconcileSettings<T extends string>(
   local: T[] | null,
-  remote: T[] | null,
+  remote: T[] | null | undefined,
 ): SettingsReconcile<T> {
-  if (remote !== null) return { adopt: remote, push: false };
-  return { adopt: local, push: local !== null && local.length > 0 };
+  if (remote === undefined) return { adopt: null, push: false, unresolved: true };
+  if (remote !== null) return { adopt: remote, push: false, unresolved: false };
+  return { adopt: local, push: local !== null && local.length > 0, unresolved: false };
 }

@@ -65,10 +65,21 @@ test('mergeUnique unions with local order first and no duplicates', () => {
 
 test('reconcileSettings: remote row wins, first sync pushes local', () => {
   // Account already has a row — that is the newest explicit state anywhere.
-  assert.deepEqual(reconcileSettings(['closing'], ['system']), { adopt: ['system'], push: false });
-  assert.deepEqual(reconcileSettings(['closing'], []), { adopt: [], push: false });
+  assert.deepEqual(reconcileSettings(['closing'], ['system']), { adopt: ['system'], push: false, unresolved: false });
+  assert.deepEqual(reconcileSettings(['closing'], []), { adopt: [], push: false, unresolved: false });
 
   // No remote row yet — first sync: adopt local and push it.
-  assert.deepEqual(reconcileSettings(['closing'], null), { adopt: ['closing'], push: true });
-  assert.deepEqual(reconcileSettings([], null), { adopt: [], push: false });
+  assert.deepEqual(reconcileSettings(['closing'], null), { adopt: ['closing'], push: true, unresolved: false });
+  assert.deepEqual(reconcileSettings([], null), { adopt: [], push: false, unresolved: false });
+});
+
+test('reconcileSettings: unknown remote state never touches local or remote', () => {
+  // A fetch failure must NOT read as "no row" — that would push local mutes
+  // over an existing account row (or vice-versa). Nothing adopted, nothing
+  // pushed, caller retries later.
+  assert.deepEqual(reconcileSettings(['closing'], undefined), {
+    adopt: null,
+    push: false,
+    unresolved: true,
+  });
 });
