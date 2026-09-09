@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Sparkles, CalendarRange } from 'lucide-react';
 import { getUser } from '@/lib/supabase-server';
@@ -7,6 +8,10 @@ import { formatDate } from '@/lib/format';
 import { CompactTenderCard } from '@/components/tender/CompactTenderCard';
 import { TenderCard } from '@/components/tender/TenderCard';
 import { DataSourceNotice } from '@/components/ui/DataSourceNotice';
+
+export const metadata: Metadata = {
+  title: 'Weekly Briefing · TenderBase',
+};
 
 export const revalidate = 300;
 

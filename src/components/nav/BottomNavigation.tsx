@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, Search, Bookmark, Bell, User } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { useSavedTenders } from '@/lib/saved-store';
 
 const ITEMS = [
   { href: '/', label: 'Home', icon: Home },
@@ -16,9 +17,13 @@ const ITEMS = [
  * Persistent tab bar on mobile. On desktop (md+) it becomes a left sidebar —
  * same routes, same icons, one coherent system.
  */
-export function BottomNavigation({ alertCount = 0 }: { alertCount?: number }) {
+export function BottomNavigation() {
   const pathname = usePathname();
+  const { saved } = useSavedTenders();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
+  // U1: an unread-alerts engine doesn't exist yet, so no fake badge. Saved
+  // count is real and lives on the Saved tab icon — a genuinely useful badge.
+  const savedCount = saved.length;
 
   return (
     <nav
@@ -48,9 +53,9 @@ export function BottomNavigation({ alertCount = 0 }: { alertCount?: number }) {
           >
             <span className="relative">
               <Icon size={23} strokeWidth={active ? 2 : 1.7} aria-hidden />
-              {label === 'Alerts' && alertCount > 0 && (
-                <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-lg border-2 border-white bg-urgent px-1 text-[9.5px] font-bold text-white">
-                  {alertCount}
+              {label === 'Saved' && savedCount > 0 && (
+                <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-lg border-2 border-white bg-navy px-1 text-[9.5px] font-bold text-white">
+                  {savedCount > 99 ? '99+' : savedCount}
                 </span>
               )}
             </span>

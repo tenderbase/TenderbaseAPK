@@ -1,5 +1,10 @@
+import type { Metadata } from 'next';
 import { DashboardView } from './DashboardView';
 import { getClosingSoon, getLatest, getStats } from '@/lib/tenders';
+
+export const metadata: Metadata = {
+  title: 'TenderBase — Find the opportunities that matter',
+};
 
 /**
  * Server component: fetches live tenders on the server so upstream concerns

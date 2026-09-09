@@ -20,7 +20,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="app-scroll">
             <div className="mx-auto max-w-3xl md:max-w-5xl">{children}</div>
           </div>
-          <BottomNavigation alertCount={0} />
+          <BottomNavigation />
           <MenuDrawer />
         </div>
       </SavedProvider>
