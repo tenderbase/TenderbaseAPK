@@ -1,31 +1,23 @@
 /**
  * Business-logic tests — zero dependencies, runs on the Node test runner.
- *   node --test src/lib/__tests__/
- * Mirrors src/lib/format.ts. Keep in sync if the rules change.
+ *   npm test
+ *
+ * Imports the REAL src/lib/format.ts (see resolver.mjs). This file used to
+ * inline copies of the functions, and they had already drifted: the copy took
+ * `getStatus(iso, now)` while the module takes `getStatus(tender, now)`, so the
+ * test was asserting a signature nothing in the app calls.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-// --- inlined copies of the pure functions under test ---
-const formatValue = (c) => {
-  if (c === null) return 'Not disclosed';
-  const r = c / 100;
-  if (r >= 1_000_000) { const m = r / 1_000_000; return `R${m % 1 === 0 ? m.toFixed(0) : m.toFixed(1)}M`; }
-  if (r >= 1_000) return `R${Math.round(r / 1_000)}k`;
-  return `R${r.toFixed(0)}`;
-};
-const daysUntil = (iso, now = new Date()) => {
-  const s = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-  const c = new Date(iso);
-  return Math.round((Date.UTC(c.getFullYear(), c.getMonth(), c.getDate()) - s) / 86400000);
-};
-const getStatus = (iso, now) => {
-  const d = daysUntil(iso, now);
-  if (d < 0) return 'closed';
-  if (d <= 2) return 'urgent';
-  if (d <= 7) return 'closing_soon';
-  return 'open';
-};
+import {
+  daysUntil,
+  formatDate,
+  formatDeadline,
+  formatValue,
+  getStatus,
+  normaliseCase,
+} from '@/lib/format';
 
 const NOW = new Date('2026-09-02T09:00:00Z');
 const at = (days) => { const d = new Date(NOW); d.setDate(d.getDate() + days); return d.toISOString(); };
@@ -47,18 +39,18 @@ test('formatValue: withheld value is never rendered as R0', () => {
 });
 
 test('getStatus is derived from the closing date', () => {
-  assert.equal(getStatus(at(-1), NOW), 'closed');
-  assert.equal(getStatus(at(0),  NOW), 'urgent');       // closes today
-  assert.equal(getStatus(at(2),  NOW), 'urgent');
-  assert.equal(getStatus(at(3),  NOW), 'closing_soon');
-  assert.equal(getStatus(at(7),  NOW), 'closing_soon');
-  assert.equal(getStatus(at(8),  NOW), 'open');
+  assert.equal(getStatus({ closingDate: at(-1) }, NOW), 'closed');
+  assert.equal(getStatus({ closingDate: at(0) },  NOW), 'urgent');       // closes today
+  assert.equal(getStatus({ closingDate: at(2) },  NOW), 'urgent');
+  assert.equal(getStatus({ closingDate: at(3) },  NOW), 'closing_soon');
+  assert.equal(getStatus({ closingDate: at(7) },  NOW), 'closing_soon');
+  assert.equal(getStatus({ closingDate: at(8) },  NOW), 'open');
 });
 
 test('status boundaries do not overlap', () => {
   // every day maps to exactly one status
   for (let d = -5; d <= 30; d++) {
-    const s = getStatus(at(d), NOW);
+    const s = getStatus({ closingDate: at(d) }, NOW);
     assert.ok(['closed','urgent','closing_soon','open'].includes(s), `day ${d} → ${s}`);
   }
 });
@@ -68,13 +60,6 @@ test('daysUntil ignores time-of-day', () => {
   assert.equal(daysUntil('2026-09-02T23:59:00Z', NOW), 0);
   assert.equal(daysUntil('2026-09-02T00:01:00Z', NOW), 0);
 });
-
-const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const formatDate = (iso) => {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return 'Not stated';
-  return `${String(d.getUTCDate()).padStart(2,'0')} ${MONTHS_SHORT[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-};
 
 test('September abbreviates to Sep, not Sept (Intl regression)', () => {
   // Node ICU returns "Sept" for en-GB AND en-ZA; Chromium returns "Sep".
@@ -95,4 +80,57 @@ test('all twelve months are three letters', () => {
     const abbr = formatDate(iso).split(' ')[1];
     assert.equal(abbr.length, 3, `${iso} -> ${abbr}`);
   }
+});
+
+// --- lifecycle override ---
+// The ingestion API reports `status: active | complete | cancelled`, which can
+// contradict the closing date. A cancelled tender with a date still in the
+// future must not read as "Open" — bidders spend real money on those responses.
+
+test('a cancelled tender is cancelled even when its closing date is in the future', () => {
+  assert.equal(getStatus({ closingDate: at(30), lifecycleStatus: 'cancelled' }, NOW), 'cancelled');
+  assert.equal(getStatus({ closingDate: at(1), lifecycleStatus: 'cancelled' }, NOW), 'cancelled');
+});
+
+test('a completed tender is closed even when its closing date is in the future', () => {
+  assert.equal(getStatus({ closingDate: at(30), lifecycleStatus: 'complete' }, NOW), 'closed');
+});
+
+test('an active tender still derives its status from the date', () => {
+  assert.equal(getStatus({ closingDate: at(3), lifecycleStatus: 'active' }, NOW), 'closing_soon');
+  assert.equal(getStatus({ closingDate: at(30), lifecycleStatus: 'active' }, NOW), 'open');
+});
+
+test('an unknown lifecycle value does not override the date', () => {
+  // The enum is undocumented upstream; a new state must degrade, not crash.
+  assert.equal(getStatus({ closingDate: at(3), lifecycleStatus: 'awarded' }, NOW), 'closing_soon');
+  assert.equal(getStatus({ closingDate: at(3), lifecycleStatus: null }, NOW), 'closing_soon');
+  assert.equal(getStatus({ closingDate: at(3) }, NOW), 'closing_soon');
+});
+
+test('status matching is case-insensitive', () => {
+  assert.equal(getStatus({ closingDate: at(30), lifecycleStatus: 'CANCELLED' }, NOW), 'cancelled');
+});
+
+test('cancelled appears in the boundary sweep', () => {
+  for (let d = -5; d <= 30; d++) {
+    const s = getStatus({ closingDate: at(d), lifecycleStatus: 'cancelled' }, NOW);
+    assert.equal(s, 'cancelled', `day ${d}`);
+  }
+});
+
+test('formatDeadline reports cancellation instead of a countdown', () => {
+  assert.equal(formatDeadline(at(30), NOW, 'cancelled'), 'Cancelled');
+  assert.equal(formatDeadline(at(30), NOW, 'active'), '30 days left');
+  assert.equal(formatDeadline(at(1), NOW), 'Closes tomorrow');
+});
+
+test('normaliseCase leaves mixed-case descriptions alone', () => {
+  // The new feed is not uniformly shouted, unlike the previous one.
+  assert.equal(
+    normaliseCase('Provision of Security Services in Tsolo for a One-Year Contract.'),
+    'Provision of Security Services in Tsolo for a One-Year Contract.',
+  );
+  assert.equal(normaliseCase('SUPPLY OF MESH FENCING'), 'Supply of mesh fencing');
+  assert.equal(normaliseCase(''), '');
 });

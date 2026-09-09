@@ -1,4 +1,4 @@
-import type { Tender, TenderStatus } from '@/types/tender';
+import type { LifecycleStatus, Tender, TenderStatus } from '@/types/tender';
 
 /** R2.4M / R850k / R1 250 — compact ZAR for cards. */
 export function formatValue(valueCents: number | null): string {
@@ -64,11 +64,27 @@ export function daysUntil(iso: string, now: Date = new Date()): number {
 }
 
 /**
- * Status is always DERIVED from the closing date so the UI can never
- * disagree with reality.
- *   <0 closed | <=2 urgent | <=7 closing soon | else open
+ * Status is DERIVED, never stored, so the badge, deadline pill and accent bar
+ * can never disagree with each other or go stale in cache.
+ *
+ * Two inputs:
+ *  1. `lifecycleStatus` from the ingestion API wins when it says the process
+ *     ended. A cancelled tender with a future closing date must not render as
+ *     "Open" — bidders spend real money preparing responses to those.
+ *  2. Otherwise the closing date decides:
+ *     <0 closed | <=2 urgent | <=7 closing soon | else open
+ *
+ * `lifecycleStatus` is optional, so callers passing a bare `{ closingDate }`
+ * still typecheck and get pure date derivation.
  */
-export function getStatus(tender: Pick<Tender, 'closingDate'>, now?: Date): TenderStatus {
+export function getStatus(
+  tender: Pick<Tender, 'closingDate'> & { lifecycleStatus?: LifecycleStatus | null },
+  now?: Date,
+): TenderStatus {
+  const lifecycle = tender.lifecycleStatus?.toLowerCase();
+  if (lifecycle === 'cancelled') return 'cancelled';
+  if (lifecycle === 'complete') return 'closed';
+
   const d = daysUntil(tender.closingDate, now);
   if (d < 0) return 'closed';
   if (d <= 2) return 'urgent';
@@ -76,8 +92,13 @@ export function getStatus(tender: Pick<Tender, 'closingDate'>, now?: Date): Tend
   return 'open';
 }
 
-/** 'Closes today' | 'Closes in 3 days' | '10 days left' | 'Closed' */
-export function formatDeadline(iso: string, now?: Date): string {
+/** 'Closes today' | 'Closes in 3 days' | '10 days left' | 'Closed' | 'Cancelled' */
+export function formatDeadline(
+  iso: string,
+  now?: Date,
+  lifecycle?: LifecycleStatus | null,
+): string {
+  if (lifecycle?.toLowerCase() === 'cancelled') return 'Cancelled';
   const d = daysUntil(iso, now);
   if (d < 0) return 'Closed';
   if (d === 0) return 'Closes today';

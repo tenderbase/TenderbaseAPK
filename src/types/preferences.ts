@@ -31,7 +31,13 @@ export interface TenderPreferences {
   includeNational: boolean;
   /** Hide tenders closing sooner than this many days away. 0 = no filter. */
   minDaysToClose: ClosingWindow;
-  /** Only tenders with at least one attached document (API: has_documents). */
+  /**
+   * Only tenders with at least one attached document.
+   *
+   * Applied client-side: the ingestion API has no documents filter. Every
+   * sampled record carries at least one document, so in practice this hides
+   * very little — but it must not be presented as a server-side guarantee.
+   */
   requireDocuments: boolean;
 
   // Alerts
@@ -103,14 +109,33 @@ export function preferencesEqual(a: TenderPreferences, b: TenderPreferences): bo
 }
 
 /**
- * Translates preferences into TenderBase API query params.
- * The API takes a single `category` / `province`, so multi-select is applied
- * client-side; only unambiguous single selections are pushed to the server.
+ * Translates preferences into ingestion-API query params.
+ *
+ * Only what the API genuinely supports is pushed server-side. Sending a param
+ * it ignores is worse than not sending it: `/tenders` drops unknown keys
+ * silently, so a bogus filter looks like it worked and quietly returns the
+ * whole unfiltered dataset.
+ *
+ *  - `province` — safe. Our `PROVINCES` are the upstream's exact display names
+ *    (verified against `/provinces`, all 10 including `National`).
+ *  - `closingAfter` — `minDaysToClose` means "leave me N days to prepare", i.e.
+ *    closing no sooner than now + N days.
+ *  - `category` — NOT pushed. Our 13-value taxonomy is a *grouping* of the
+ *    upstream's 62 categories (`deriveCategory` maps e.g. Construction <-
+ *    {Construction, Construction of buildings, Specialised construction
+ *    activities, Services: Building, Services: Civil}), and `/tenders` accepts
+ *    exactly one verbatim name. Sending 'Construction' alone would under-report;
+ *    sending 'IT & Technology' matches zero rows. Applied client-side until
+ *    preferences store upstream category names directly.
+ *  - `requireDocuments` — NOT pushed; no such filter exists upstream.
  */
 export function toQueryParams(p: TenderPreferences): Record<string, string> {
   const params: Record<string, string> = {};
-  if (p.categories.length === 1) params.category = p.categories[0];
   if (p.provinces.length === 1 && !p.includeNational) params.province = p.provinces[0];
-  if (p.requireDocuments) params.has_documents = 'true';
+  if (p.minDaysToClose > 0) {
+    params.closingAfter = new Date(
+      Date.now() + p.minDaysToClose * 86_400_000,
+    ).toISOString();
+  }
   return params;
 }

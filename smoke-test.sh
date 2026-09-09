@@ -18,13 +18,28 @@ bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL+1)); }
 # the current configuration rather than skipping the check.
 BYPASS=$(grep -sE '^NEXT_PUBLIC_DEV_AUTH_BYPASS=true' .env.local >/dev/null && echo 1 || echo 0)
 
+# Without real Supabase credentials the middleware deliberately runs the app
+# unauthenticated (lib/supabase-config.ts treats placeholder values as "not
+# configured"), so a 200 is correct rather than an auth leak. Assert whichever
+# is right for the current configuration instead of failing the run.
+SB_URL=$(grep -sE '^NEXT_PUBLIC_SUPABASE_URL=' .env.local | head -1 | cut -d= -f2-)
+SB_KEY=$(grep -sE '^NEXT_PUBLIC_SUPABASE_ANON_KEY=' .env.local | head -1 | cut -d= -f2-)
+UNAUTHED=0
+case "$SB_URL|$SB_KEY" in
+  "|"*|*your-anon-key*|*your-project*) UNAUTHED=1 ;;
+esac
+if [ "$BYPASS" = "1" ] || [ "$UNAUTHED" = "1" ]; then OPEN=1; else OPEN=0; fi
+if [ "$UNAUTHED" = "1" ] && [ "$BYPASS" != "1" ]; then
+  echo "note: no Supabase credentials in .env.local — app runs unauthenticated"
+fi
+
 guarded() {
   local label="$1" path="$2" got loc
   got=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 "$BASE$path")
   loc=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 90 "$BASE$path")
-  if [ "$BYPASS" = "1" ]; then
-    [ "$got" = "200" ] && ok "$label (bypass on: serves 200)" \
-      || bad "$label (bypass on, wanted 200, got $got)"
+  if [ "$OPEN" = "1" ]; then
+    [ "$got" = "200" ] && ok "$label (auth open: serves 200)" \
+      || bad "$label (auth open, wanted 200, got $got)"
     return
   fi
   if [ "$got" = "307" ] && case "$loc" in *"/login"*) true;; *) false;; esac; then
@@ -62,17 +77,66 @@ echo
 echo "API proxy:"
 route "Tender list endpoint"     "/api/tenders?limit=2"
 route "Facets endpoint"          "/api/facets"
+route "Stats endpoint"           "/api/stats"
 
 echo
-echo "Live data integration:"
-contains "Live source reported"      "/api/tenders?limit=2"     '"source":"live"'
+echo "Ingestion API integration:"
+
+# The app must be honest about where its rows came from. Live is the happy path;
+# the fixture fallback carries REAL captured payloads, but only if it says so.
+body=$(curl -s --max-time 90 "$BASE/api/tenders?limit=2")
+src=$(printf '%s' "$body" | grep -oE '"source":"(live|fixture)"' | head -1 | cut -d'"' -f4)
+case "$src" in
+  live)    ok "Live source reported" ;;
+  fixture) if printf '%s' "$body" | grep -q '"notice"'; then
+             ok "Fixture fallback labelled (notice present)"
+           else
+             bad "Fixture fallback with no notice — captures would pass as live"
+           fi ;;
+  *)       bad "No usable source field in /api/tenders (got: ${src:-none})" ;;
+esac
+
+# The API matches province/category names EXACTLY and silently ignores unknown
+# params, so the slug the UI used to send returned the whole dataset while the
+# chip still showed as selected. Both halves of that bug are asserted here.
+total_of() {
+  curl -s --max-time 90 "$BASE/api/tenders?$1" | grep -oE '"total":[0-9]+' | head -1 | cut -d: -f2
+}
+ALL=$(total_of "limit=1")
+EXACT=$(total_of "limit=1&province=KwaZulu-Natal")
+SLUG=$(total_of "limit=1&province=kwazulu-natal")
+if [ -n "$ALL" ] && [ "$ALL" -gt 0 ]; then
+  ok "Dataset has rows (total=$ALL)"
+else
+  bad "No rows from /api/tenders (total=${ALL:-none})"
+fi
+if [ -n "$EXACT" ] && [ "$EXACT" -gt 0 ] && [ "$EXACT" -lt "${ALL:-0}" ]; then
+  ok "Exact province name filters ($EXACT of $ALL)"
+else
+  bad "province=KwaZulu-Natal did not filter (got ${EXACT:-none} of ${ALL:-?})"
+fi
+if [ "$SLUG" = "0" ]; then
+  ok "Slug province name matches nothing (as upstream does)"
+else
+  bad "province=kwazulu-natal returned ${SLUG:-none} rows — slugs are not valid upstream"
+fi
 
 echo
 echo "Data-quality guarantees:"
-# Reference codes like "20/2026 LLM" must never surface as a card title.
-# The API exposes no monetary field — a fabricated amount would be a lie.
-# Node ICU renders "Sept"; we hardcode "Sep" so server and client agree.
-# The key must never reach the device (critical for the Capacitor APK).
+# Reference codes ("NB096", "RFQ12214 RE-ISSUE") must never surface as a title:
+# the adapter derives the subject from the description instead.
+contains "Titles are derived, not reference codes" "/api/tenders?limit=8" "procurement of proffesional services"
+# The feed carries no money. A fabricated amount next to a real tender is the
+# most dangerous thing this app could do.
+absent   "No withheld value rendered as R0"        "/api/tenders?limit=8" '"valueCents":0'
+# Upstream supplies MIME types; the UI must show PDF, not APPLICATION/PDF.
+contains "Document MIME types are labelled"        "/api/tenders?limit=8" '"fileType":"PDF"'
+# Contact details are new with this feed and must survive the mapping.
+contains "Contact details are mapped"              "/api/tenders?limit=8" '"contactPerson"'
+# A cancelled tender must not read as open. Asserted on the API surface because
+# app routes are behind auth on a real deployment; the badge itself is covered
+# by the getStatus tests in src/lib/__tests__/format.test.mjs.
+contains "Lifecycle status survives the mapping"   "/api/tenders?limit=8" '"lifecycleStatus"'
 
 echo
 echo "Menu drawer:"
@@ -99,18 +163,18 @@ guarded  "Alerts requires sign-in"        "/alerts"
 guarded  "Profile requires sign-in"       "/profile"
 guarded  "Company profile requires auth"  "/profile/company"
 guarded  "Preferences requires auth"      "/profile/preferences"
-guarded  "Tender detail requires auth"    "/tenders/877"
+guarded  "Tender detail requires auth"    "/tenders/cmtt6lx56000142xs7i6g1dkg"
 guarded  "Briefing requires auth"         "/briefing"
 # A signed-out visitor must not even learn whether a tender exists; with the
-# bypass on, the genuine 404 is the correct answer.
-if [ "$BYPASS" = "1" ]; then
-  route  "Unknown tender 404s"            "/tenders/99999999" 404
+# auth open, the genuine 404 is the correct answer.
+if [ "$OPEN" = "1" ]; then
+  route  "Unknown tender 404s"            "/tenders/not-a-real-cuid" 404
 else
-  guarded "Unknown tender requires auth"  "/tenders/99999999"
+  guarded "Unknown tender requires auth"  "/tenders/not-a-real-cuid"
 fi
 
-if [ "$BYPASS" = "1" ]; then
-  ok "Login page skipped (bypass on)"
+if [ "$OPEN" = "1" ]; then
+  ok "Login page skipped (auth open)"
 else
   route    "Login page is public"           "/login"
   contains "Login offers Google"            "/login" "Continue with Google"

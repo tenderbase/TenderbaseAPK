@@ -1,22 +1,24 @@
-import type {
-  SearchResponse,
-  SortOption,
-  TenderFilters,
-  TenderWithUserState,
-} from '@/types/tender';
+import type { DatasetStats, Facets, TenderPage } from '@/lib/tenders';
+import type { SortOption, TenderWithUserState } from '@/types/tender';
 
 /**
- * TenderBase API client.
+ * Client-side TenderBase API wrapper.
  *
- * Every method maps to a real endpoint — nothing in the UI is wired to a
- * placeholder. Calls that need the API key go through Next route handlers
- * (`/api/*`) so the key is never shipped to the device.
+ * Calls our own Next route handlers under `/api/*`, never the ingestion service
+ * directly. The upstream is public now, so this is no longer about hiding a key
+ * — it is about giving the browser one stable contract while the upstream shape
+ * is free to change, and about keeping ISR cache headers server-side.
+ *
+ * Every method below maps to a route that exists in `src/app/api/`. The
+ * previous version advertised `/tenders/recommended`, `/saved`, `/saved/:id`
+ * and `/tenders/:id/documents/:id`; none of those were ever implemented, so
+ * calling them produced a 404 at runtime. They are gone rather than stubbed.
  */
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { Accept: 'application/json', ...init?.headers },
   });
   if (!res.ok) {
     throw new Error(`TenderBase API ${res.status}: ${await res.text()}`);
@@ -24,47 +26,50 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-function toQuery(filters: TenderFilters, sort: SortOption, page: number): string {
+export interface TenderListParams {
+  /** Full-text search; upstream matches description text too. */
+  q?: string;
+  /** Verbatim upstream category, e.g. 'Supplies: Computer Equipment'. */
+  category?: string;
+  /** Verbatim upstream province, e.g. 'KwaZulu-Natal'. */
+  province?: string;
+  /** 'active' | 'complete' | 'cancelled'. */
+  status?: string;
+  /** App-level window ('24h' | '7d' | '30d'), translated server-side. */
+  closingWithin?: string;
+  sort?: SortOption;
+  page?: number;
+  limit?: number;
+}
+
+function toQuery(params: TenderListParams): string {
   const p = new URLSearchParams();
-  if (filters.query) p.set('q', filters.query);
-  filters.categories?.forEach((c) => p.append('category', c));
-  filters.provinces?.forEach((v) => p.append('province', v));
-  filters.statuses?.forEach((s) => p.append('status', s));
-  if (filters.organisation) p.set('organisation', filters.organisation);
-  if (filters.minValueCents != null) p.set('minValue', String(filters.minValueCents));
-  if (filters.maxValueCents != null) p.set('maxValue', String(filters.maxValueCents));
-  if (filters.closingBefore) p.set('closingBefore', filters.closingBefore);
-  if (filters.closingAfter) p.set('closingAfter', filters.closingAfter);
-  p.set('sort', sort);
-  p.set('page', String(page));
-  return p.toString();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === '') continue;
+    p.set(k, String(v));
+  }
+  const s = p.toString();
+  return s ? `?${s}` : '';
 }
 
 export const tenderApi = {
-  search(filters: TenderFilters, sort: SortOption = 'closing_soon', page = 1) {
-    return request<SearchResponse>(`/tenders?${toQuery(filters, sort, page)}`);
+  list(params: TenderListParams = {}) {
+    return request<TenderPage>(`/tenders${toQuery(params)}`);
   },
 
   getById(id: string) {
-    return request<TenderWithUserState>(`/tenders/${id}`);
+    return request<{ tender: TenderWithUserState; source: string; notice?: string }>(
+      `/tenders/${encodeURIComponent(id)}`,
+    );
   },
 
-  recommended() {
-    return request<TenderWithUserState[]>('/tenders/recommended');
+  /** Category and province vocabularies with live counts, for filter UIs. */
+  facets() {
+    return request<Facets>('/facets');
   },
 
-  saved(filter: 'all' | 'closing_soon' | 'recent' = 'all') {
-    return request<TenderWithUserState[]>(`/saved?filter=${filter}`);
-  },
-
-  toggleSave(id: string, saved: boolean) {
-    return request<{ saved: boolean }>(`/saved/${id}`, {
-      method: saved ? 'PUT' : 'DELETE',
-    });
-  },
-
-  /** Resolves a signed, time-limited document URL from the source system. */
-  documentUrl(tenderId: string, documentId: string) {
-    return request<{ url: string }>(`/tenders/${tenderId}/documents/${documentId}`);
+  /** Pipeline totals: 411 indexed, 396 active, 101 expiring soon, etc. */
+  stats() {
+    return request<DatasetStats>('/stats');
   },
 };

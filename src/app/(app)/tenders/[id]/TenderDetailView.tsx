@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ChevronLeft, Share2, Bookmark, Building2, Sparkles,
-  FileText, History, Download,
+  FileText, History, Download, Mail, Phone, User, ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { StatusBadge, CategoryBadge } from '@/components/ui/StatusBadge';
@@ -137,8 +137,11 @@ export function TenderDetailView({
         <dl className="mt-2.5 divide-y divide-line rounded-[14px] border border-line bg-white px-3.5">
           {([
             ['Tender Number', tender.tenderNumber],
-            ['Category', tender.category],
-            ['Location', tender.location],
+            // Verbatim upstream category — the badge above shows the app's
+            // coarse grouping, which would hide e.g. "Supplies: Medical".
+            ['Category', tender.categoryRaw ?? tender.category],
+            // Full eTenders address; the card-scale `location` is city+province.
+            ['Location', tender.locationFull ?? tender.location],
             ['Published', tender.publishedDate ? formatDate(tender.publishedDate) : 'Not stated'],
           ] as const).map(([k, v]) => (
             <div key={k} className="flex items-start justify-between gap-4 py-3">
@@ -155,6 +158,61 @@ export function TenderDetailView({
               {normaliseCase(tender.description)}
             </p>
           </section>
+        )}
+
+        {/*
+          Contact details are new with this feed — the previous one never
+          supplied them, so `contactInformation` was hardcoded to null in the
+          adapter. Rendered only when upstream actually published someone.
+        */}
+        {tender.contactInformation && (
+          <section className="mt-4">
+            <h2 className="mb-3 text-section font-semibold tracking-[-0.02em]">Contact</h2>
+            <div className="divide-y divide-line rounded-[14px] border border-line bg-white px-3.5">
+              {tender.contactInformation.contactPerson && (
+                <div className="flex items-center gap-3 py-3">
+                  <User size={16} strokeWidth={1.9} className="shrink-0 text-ink-3" aria-hidden />
+                  <span className="min-w-0 flex-1 text-[13.5px] font-semibold text-ink">
+                    {tender.contactInformation.contactPerson}
+                  </span>
+                </div>
+              )}
+              {tender.contactInformation.email && (
+                <a
+                  href={`mailto:${tender.contactInformation.email}`}
+                  className="flex items-center gap-3 py-3"
+                >
+                  <Mail size={16} strokeWidth={1.9} className="shrink-0 text-ink-3" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-blue">
+                    {tender.contactInformation.email}
+                  </span>
+                </a>
+              )}
+              {tender.contactInformation.phone && (
+                <a
+                  href={`tel:${tender.contactInformation.phone.replace(/\s+/g, '')}`}
+                  className="flex items-center gap-3 py-3"
+                >
+                  <Phone size={16} strokeWidth={1.9} className="shrink-0 text-ink-3" aria-hidden />
+                  <span className="min-w-0 flex-1 text-[13.5px] font-medium text-ink">
+                    {tender.contactInformation.phone}
+                  </span>
+                </a>
+              )}
+            </div>
+          </section>
+        )}
+
+        {tender.sourceUrl && (
+          <a
+            href={tender.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2.5 flex items-center justify-center gap-1.5 rounded-[14px] border border-line bg-white py-3 text-meta font-semibold text-navy"
+          >
+            View on eTenders portal
+            <ExternalLink size={14} strokeWidth={2.1} aria-hidden />
+          </a>
         )}
 
         {/* Real documents from the eTenders feed */}

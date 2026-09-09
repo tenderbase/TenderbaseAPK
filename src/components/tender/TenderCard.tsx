@@ -82,7 +82,7 @@ export function TenderCard({
           <span className="text-[15px] font-bold tracking-[-0.02em] text-navy">
             {formatValue(tender.valueCents)}
           </span>
-          <DeadlineBadge closingDate={tender.closingDate} />
+          <DeadlineBadge closingDate={tender.closingDate} lifecycleStatus={tender.lifecycleStatus} />
         </div>
         <span className="flex items-center gap-0.5 text-meta font-semibold text-blue">
           View

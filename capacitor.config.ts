@@ -9,9 +9,10 @@ import type { CapacitorConfig } from '@capacitor/cli';
  *
  *   - The Next server keeps running, so `src/app/api/*` route handlers,
  *     `src/middleware.ts` and every `server-only` module still work.
- *   - TENDERBASE_API_KEY stays on the server and is NEVER
- *     shipped inside the APK. An APK is a zip file; anything bundled in it is
- *     extractable. This is the whole reason for choosing option A.
+ *   - Server concerns stay on the server. The ingestion API is public now, but
+ *     TENDERBASE_ADMIN_SECRET and the Supabase session handling are not, and an
+ *     APK is a zip file: anything bundled into it is extractable. This is the
+ *     whole reason for choosing option A.
  *   - Shipping a fix = redeploying the web app. No new APK, no store review.
  *
  * Set TENDERBASE_APP_URL at build time to point the shell at your deployment:

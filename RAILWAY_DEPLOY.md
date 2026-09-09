@@ -37,7 +37,7 @@ railway init            # name it e.g. tenderbase-web
 ```
 
 Note this is a **separate service** from your existing
-`tenderbased-production` API. Add it to the same project if you want them
+ingestion API (hosted separately on Render, public and keyless). Add it to the same project if you want them
 grouped; it must not replace the API.
 
 ### 3. Set environment variables
@@ -45,8 +45,7 @@ grouped; it must not replace the API.
 Set these on Railway, never in the repo:
 
 ```bash
-railway variables --set TENDERBASE_API_URL=https://tenderbased-production.up.railway.app/api/v1
-railway variables --set TENDERBASE_API_KEY=<key>
+railway variables --set TENDERBASE_API_URL=https://tenderbase-api-rqrh.onrender.com
 railway variables --set TENDERBASE_ADMIN_SECRET=<secret>
 railway variables --set NEXT_PUBLIC_SUPABASE_URL=<url>
 railway variables --set NEXT_PUBLIC_SUPABASE_ANON_KEY=<key>

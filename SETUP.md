@@ -26,7 +26,7 @@ Put your key in `.env.local`:
 
 ```bash
 cp .env.example .env.local
-# then set TENDERBASE_API_KEY=<your key>
+# TENDERBASE_API_URL defaults to the public ingestion API; no key is needed
 ```
 
 Without a key the app still runs — it falls back to sample data and shows a
@@ -189,7 +189,7 @@ the typed client — component props are already the right shape:
 + const { results } = await tenderApi.search({ query });
 ```
 
-`TENDERBASE_API_KEY` must stay server-side — read only inside `/api/*` route handlers, never in a `'use client'` file. This
+Upstream tender calls must stay server-side — `src/lib/tender-api.server.ts` imports `server-only`, and `TENDERBASE_ADMIN_SECRET` is read only inside `/api/*` route handlers, never in a `'use client'` file. This
 matters especially for the Android build, where the bundle is easily inspected.
 
 ---

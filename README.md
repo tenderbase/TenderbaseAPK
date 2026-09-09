@@ -48,24 +48,57 @@ Colour communicates **status**, not decoration:
 
 ### Status is derived, never stored
 
-`getStatus()` in `lib/format.ts` computes status from `closingDate` alone, so
-the badge, the deadline pill and the accent bar can never disagree with each
-other or go stale in cache.
+`getStatus()` in `lib/format.ts` computes status from `closingDate`, so the
+badge, the deadline pill and the accent bar can never disagree with each other
+or go stale in cache. The one override is an upstream `cancelled` lifecycle,
+which outranks the date: see `API-INTEGRATION.md` §4.9.
 
 ---
 
 ## Data layer
 
-`types/tender.ts` is the single source of truth. Note:
+Tenders come from the **TenderBase Ingestion API**
+(`https://tenderbase-api-rqrh.onrender.com`) — a public, keyless service over
+the National Treasury eTenders OCDS feed. See `API-INTEGRATION.md` for the full
+contract, which was established by probing the live service because its
+`/docs/json` ships an empty `paths: {}`.
+
+```
+src/lib/tender-api.server.ts   HTTP, timeouts, ISR, typed errors   (server-only)
+src/lib/adapt.ts               upstream -> domain model            (pure)
+src/lib/tenders.ts             what screens call, + offline fallback
+src/lib/fixtures/tender-api.ts verbatim captures used offline and by tests
+```
+
+`types/tender.ts` is the domain model and the single source of truth for
+components. `types/api.ts` is the wire contract; **nothing outside `adapt.ts`
+may import it**. That boundary is what stops upstream churn from rippling
+through thirty components.
+
+Things worth knowing:
 
 - **`valueCents: number | null`** — integer cents avoids float rounding on
-  currency; `null` means the organisation withheld the value (common in SA
-  tenders) and renders as "Not disclosed", never "R0".
-- **`TenderWithUserState`** extends `Tender` with `isSaved`, so
-  unauthenticated endpoints can return the base type safely.
+  currency; `null` means the value was withheld and renders as "Not disclosed",
+  never "R0". The feed carries no money at all, so it is always `null` and
+  nothing fabricates one.
+- **Two taxonomies.** Upstream publishes 62 categories; the design system has 13
+  badge groups. `category` is the mapped group, `categoryRaw` the verbatim
+  upstream name — which is what `?category=` filters on. Sending a group name
+  matches zero rows.
+- **Exact names, not slugs.** `province` and `category` are matched verbatim
+  (`KwaZulu-Natal`, not `kwazulu-natal`). The API silently ignores unknown
+  params, so a wrong value returns the *entire unfiltered dataset* rather than
+  erroring.
+- **Status is derived, with one override.** `getStatus()` computes from
+  `closingDate`, except that an upstream `cancelled` lifecycle wins — a
+  cancelled tender with a future closing date must not read as "Open".
+- **`TenderWithUserState`** extends `Tender` with `isSaved`, so unauthenticated
+  endpoints can return the base type safely. Upstream always says
+  `isSaved: false`; the Supabase layer overrides it.
 
 `lib/api.ts` calls Next route handlers under `/api/*` rather than the upstream
-API directly, keeping `TENDERBASE_API_KEY` off the device. Components currently read `lib/mock-data.ts`; swapping in `tenderApi` requires no prop changes.
+directly. When the service is unreachable the app falls back to real captured
+payloads and **says so** via `DataSourceNotice` — never presented as live.
 
 ---
 
@@ -95,5 +128,7 @@ insets and `maximumScale: 1` are already handled for the webview.
 
 - Touch targets ≥44px; bookmark buttons carry the tender title in their label.
 - Tab bar uses `aria-current="page"`; tabs/toggles expose `aria-pressed`/`aria-selected`.
-- Status is never conveyed by colour alone — every badge has a text label.
+- Status is never conveyed by colour alone — every badge has a text label, and
+  `cancelled` is distinct from `closed` because the two mean different things to
+  a bidder.
 - Tender titles wrap rather than truncate.

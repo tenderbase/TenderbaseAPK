@@ -13,14 +13,14 @@ services:
     healthCheckPath: /login # "/" 307-redirects for signed-out users; /login returns 200
     autoDeploy: true
     envVars:
-      # --- Tender API (upstream on Render free tier; the app's 45s timeout +
-      # "waking up" fallback handles its cold starts) ---
-      # --- Tender API ---
+      # --- TenderBase Ingestion API ---
+      # Public and keyless, so nothing here is a secret. It is also the
+      # built-in default in src/lib/tender-api.server.ts; declared explicitly
+      # so the deployment states where its data comes from.
+      # Upstream is on Render's free tier and cold-starts: the app allows 20s
+      # then falls back to the captured fixtures, labelled as such in the UI.
       - key: TENDERBASE_API_URL
-        value: https://tenderbased-production.up.railway.app/api/v1
-      - key: TENDERBASE_API_KEY
-        sync: false
-        required: true
+        value: https://tenderbase-api-rqrh.onrender.com
       - key: TENDERBASE_ADMIN_SECRET
         sync: false
         required: false

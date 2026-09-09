@@ -1,9 +1,17 @@
 import type { TenderWithUserState } from '@/types/tender';
 
 /**
- * Realistic South African fixture data for local development and the visual
- * prototype. Swap `tenderApi` in when the backend is live — component props
- * do not change.
+ * SYNTHETIC South African fixture data — invented, not captured.
+ *
+ * Only consumer left: `src/app/(app)/saved/page.tsx`. Every tender-facing
+ * screen reads `src/lib/tenders.ts`, which serves the live ingestion API and
+ * falls back to the REAL captures in `src/lib/fixtures/tender-api.ts`.
+ *
+ * Do not add to this file and do not use it for the offline fallback: a
+ * synthetic sample hides exactly the mapping problems the adapter exists to
+ * handle (reference-code titles, ALL-CAPS descriptions, 62-value category
+ * vocabulary, MIME document types). Retire it when saved tenders are persisted
+ * to Supabase — see API-INTEGRATION.md §7.
  */
 
 const daysFromNow = (n: number) => {
@@ -120,5 +128,3 @@ export const MOCK_TENDERS: TenderWithUserState[] = [
     matchScore: null,
   },
 ];
-
-export const MOCK_STATS = { newThisWeek: 42, closingSoon: 8, saved: 17 };

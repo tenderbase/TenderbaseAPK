@@ -2,8 +2,13 @@ import { AlertTriangle, Database } from 'lucide-react';
 import type { DataSource } from '@/lib/tenders';
 
 /**
- * Tells the user when they are looking at fixtures instead of live tenders.
- * Silent on the happy path — a badge on every screen would be noise.
+ * Tells the user when they are looking at captured fixtures instead of live
+ * tenders. Silent on the happy path — a badge on every screen would be noise.
+ *
+ * The fallback data is real: verbatim payloads captured from the ingestion API
+ * (see `lib/fixtures/tender-api.ts`), not invented rows. It is still labelled,
+ * because a stale snapshot presented as current would mislead someone deciding
+ * whether they have time to bid.
  */
 export function DataSourceNotice({
   source,
@@ -21,7 +26,7 @@ export function DataSourceNotice({
     >
       <AlertTriangle size={15} strokeWidth={2.1} className="mt-px shrink-0 text-soon" aria-hidden />
       <p className="text-[11.5px] leading-[1.45] text-ink-2">
-        {notice ?? 'Showing sample data — the live tender service is unavailable.'}
+        {notice ?? 'Showing tenders captured from the live API — the service is unreachable right now.'}
       </p>
     </div>
   );

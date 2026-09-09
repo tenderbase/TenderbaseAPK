@@ -11,6 +11,7 @@ const ACCENT: Record<string, string> = {
   closing_soon: 'bg-soon',
   urgent: 'bg-urgent',
   closed: 'bg-ink-3',
+  cancelled: 'bg-urgent',
 };
 
 /** Dense variant for "Closing soon" rails. Same tokens, less chrome. */
@@ -41,7 +42,7 @@ export function CompactTenderCard({
           </span>
         </div>
         <div className="mt-2 flex items-center justify-between">
-          <DeadlineBadge closingDate={tender.closingDate} />
+          <DeadlineBadge closingDate={tender.closingDate} lifecycleStatus={tender.lifecycleStatus} />
           <span className="text-[11.5px] font-medium text-ink-3">{formatDate(tender.closingDate)}</span>
         </div>
       </div>

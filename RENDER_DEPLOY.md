@@ -51,15 +51,15 @@ Render reads `render.yaml` and pre-fills: Node runtime, build
 
 | Variable | Source | Required |
 |---|---|---|
-| `TENDERBASE_API_KEY` | your tender API | yes |
+| `TENDERBASE_API_URL` | ingestion API (public, keyless) | no — built-in default |
 | `TENDERBASE_ADMIN_SECRET` | generate your own | no (admin/sync endpoints) |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API | yes |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API | yes |
 
 Pre-filled by the Blueprint (override in **Environment** if wrong):
 
-- `TENDERBASE_API_URL=https://tenderbase-api.onrender.com/api/v1`
-  (point it at the Railway `tenderbased-production` URL if the API lives
+- `TENDERBASE_API_URL=https://tenderbase-api-rqrh.onrender.com`
+  (the built-in default; override it only if the ingestion service moves
   there instead)
 
 **Do not set `NEXT_PUBLIC_DEV_AUTH_BYPASS`.** It is dev-gated and inert in
