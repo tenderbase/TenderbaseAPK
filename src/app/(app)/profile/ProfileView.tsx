@@ -226,7 +226,7 @@ export default function ProfileView({ identity }: { identity: ProfileIdentity })
         </Group>
 
         <Group title="Intelligence">
-          <Row icon={Bell} title="Notification Settings" sub="Push, email and deadline alerts" soon />
+          <Row icon={Bell} title="Notification Settings" sub="In-app alerts, push and email" href="/profile/notifications" />
         </Group>
 
         <Group title="Support">

@@ -57,6 +57,7 @@ const ACCOUNT: Item[] = [
   // stale here the moment it is edited.
   { href: '/profile/company', label: 'Company profile', icon: Building2 },
   { href: '/profile/preferences', label: 'Tender preferences', icon: SlidersHorizontal },
+  { href: '/profile/notifications', label: 'Notification settings', icon: Bell },
   { href: '/pro', label: 'Subscription & Pro', icon: Crown },
 ];
 

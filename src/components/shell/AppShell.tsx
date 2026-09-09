@@ -3,6 +3,7 @@ import { DrawerProvider } from '@/components/nav/DrawerProvider';
 import { MenuDrawer } from '@/components/nav/MenuDrawer';
 import { SavedProvider } from '@/lib/saved-store';
 import { TierProvider } from '@/lib/tier-store';
+import { AlertsProvider } from '@/lib/alerts-store';
 import { UpgradeProvider } from '@/components/tier/UpgradeSheet';
 import { TierPreview } from '@/components/tier/TierPreview';
 import { getServerTier } from '@/lib/tier-server';
@@ -17,7 +18,8 @@ import { getServerTier } from '@/lib/tier-server';
  *
  * Provider order matters: TierProvider seeds from cookies server-side,
  * UpgradeProvider gives every screen the universal Pro gate, SavedProvider
- * uses both (its cap enforcement opens the upgrade sheet).
+ * uses both (its cap enforcement opens the upgrade sheet), and
+ * AlertsProvider derives its real deadline/trial events from those stores.
  */
 export async function AppShell({ children }: { children: React.ReactNode }) {
   const { tier, trialEnd } = getServerTier();
@@ -27,14 +29,16 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       <TierProvider initialTier={tier} initialTrialEnd={trialEnd}>
         <UpgradeProvider>
           <SavedProvider>
-            <div className="min-h-screen">
-              <div className="app-scroll">
-                <div className="mx-auto max-w-3xl md:max-w-5xl">{children}</div>
+            <AlertsProvider>
+              <div className="min-h-screen">
+                <div className="app-scroll">
+                  <div className="mx-auto max-w-3xl md:max-w-5xl">{children}</div>
+                </div>
+                <BottomNavigation />
+                <MenuDrawer />
               </div>
-              <BottomNavigation />
-              <MenuDrawer />
-            </div>
-            <TierPreview />
+              <TierPreview />
+            </AlertsProvider>
           </SavedProvider>
         </UpgradeProvider>
       </TierProvider>

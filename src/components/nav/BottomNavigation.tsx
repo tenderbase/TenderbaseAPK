@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { Home, Search, Bookmark, Bell, Newspaper, User } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useSavedTenders } from '@/lib/saved-store';
+import { useAlerts } from '@/lib/alerts-store';
 
 // Blueprint §4 IA: Today · Discover · Saved · News · Alerts. Profile lives
 // in the drawer (mobile) and in the pinned desktop row below — not a tab.
@@ -22,10 +23,16 @@ const ITEMS = [
 export function BottomNavigation() {
   const pathname = usePathname();
   const { saved, session } = useSavedTenders();
+  const { unread: unreadAlerts } = useAlerts();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
-  // U1: an unread-alerts engine doesn't exist yet, so no fake badge. Saved
-  // count is real and lives on the Saved tab icon — a genuinely useful badge.
+  // Counts are real: saved rows from the store; unread in-app alerts from
+  // the alerts store (deadline/match/system events only — never synthetic).
   const savedCount = saved.length;
+  const badge = (label: string): number | null => {
+    if (label === 'Saved') return savedCount;
+    if (label === 'Alerts') return unreadAlerts;
+    return null;
+  };
 
   return (
     <nav
@@ -42,6 +49,7 @@ export function BottomNavigation() {
 
       {ITEMS.map(({ href, label, icon: Icon }) => {
         const active = isActive(href);
+        const count = badge(label);
         return (
           <Link
             key={href}
@@ -55,9 +63,9 @@ export function BottomNavigation() {
           >
             <span className="relative">
               <Icon size={23} strokeWidth={active ? 2 : 1.7} aria-hidden />
-              {label === 'Saved' && savedCount > 0 && (
+              {count !== null && count > 0 && (
                 <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-lg border-2 border-white bg-navy px-1 text-[9.5px] font-bold text-white">
-                  {savedCount > 99 ? '99+' : savedCount}
+                  {count > 99 ? '99+' : count}
                 </span>
               )}
             </span>
