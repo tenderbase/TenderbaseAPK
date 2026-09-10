@@ -84,7 +84,7 @@ export function TodayExperience({ latest, closingSoon, stats, signedIn = false, 
           <div className="mt-4 space-y-2.5">
             {closingSoon.slice(0, 3).map((t) => <Link key={t.id} href={`/tenders/${t.id}`} className="tb-tender-row">
               <span className="tb-tender-date">{formatDate(t.closingDate)}</span>
-              <span className="min-w-0 flex-1"><strong>{t.title}</strong><small>{t.organisation || 'Tender opportunity'}{t.value ? ` · ${t.value}` : ''}</small></span>
+              <span className="min-w-0 flex-1"><strong>{t.title}</strong><small>{t.organisation || 'Tender opportunity'}{t.valueCents != null ? ` · ${formatValue(t.valueCents)}` : ''}</small></span>
               <ChevronRight size={17} className="text-ink-3"/>
             </Link>)}
           </div>
@@ -109,3 +109,4 @@ export function TodayExperience({ latest, closingSoon, stats, signedIn = false, 
 function DayCard({icon,title,text,href}:{icon:React.ReactNode;title:string;text:string;href:string}) { return <Link href={href} className="tb-day-card"><span className="tb-day-icon">{icon}</span><span><strong>{title}</strong><small>{text}</small></span><ChevronRight size={16} className="ml-auto text-ink-3"/></Link> }
 function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<17?'Good afternoon':'Good evening'}
 function formatDate(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return '—';return new Intl.DateTimeFormat('en-ZA',{day:'2-digit',month:'short'}).format(d)}
+function formatValue(cents:number){return new Intl.NumberFormat('en-ZA',{style:'currency',currency:'ZAR',maximumFractionDigits:0}).format(cents/100)}
