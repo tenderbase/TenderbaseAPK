@@ -10,9 +10,8 @@ import { cn } from '@/lib/cn';
 import { PlanChip, ProBadge } from '@/components/ui/PlanChip';
 import { SubscribeButton } from '@/components/billing/SubscribeButton';
 import { useTier } from '@/lib/tier-store';
-import { useSavedTenders } from '@/lib/saved-store';
 import {
-  FEATURE_ACCESS, FEATURE_LABELS, PRO_MONTHLY_ZAR, PRO_TRIAL_DAYS,
+  FEATURE_ACCESS, FEATURE_LABELS, PRO_MONTHLY_ZAR,
   PRO_YEARLY_ZAR, TIER_META, formatZAR, proYearlyMonthlyEquivalent,
   proYearlySavingPct, type FeatureKey, type Tier,
 } from '@/types/tier';
@@ -33,9 +32,7 @@ const PERKS: { icon: typeof Crown; title: string; body: string }[] = [
 ];
 
 const FAQS: { q: string; a: string }[] = [
-  { q: 'How does the 14-day trial work?', a: 'Start the trial and every Pro feature unlocks immediately. You are never charged during the trial and nothing renews by itself — when the 14 days are up the account returns to Basic.' },
   { q: 'How do I pay for Pro?', a: 'By card through PayFast, South Africa\'s payment gateway. It is a recurring subscription you can cancel yourself on the plan screen; you keep Pro until the period you paid for ends.' },
-  { q: 'What happens when the trial ends?', a: 'You drop to Basic automatically — your saved tenders, searches and profile stay intact. Nothing you saved is deleted.' },
   { q: 'Can I stay on Basic forever?', a: 'Yes. Basic is a free account with 50 saved tenders, top-3 daily matches and in-app alerts. Pro adds unlimited depth when you need it.' },
   { q: 'Is browsing ever limited?', a: 'No. The full catalogue, documents and details are free for everyone — including guests. Pro is about intelligence, not access.' },
 ];
@@ -65,7 +62,6 @@ function cellValue(feature: FeatureKey, tier: Tier): boolean | string {
   const min = FEATURE_ACCESS[feature];
   const order: Record<Tier, number> = { free: 0, basic: 1, pro: 2 };
   if (order[tier] >= order[min]) {
-    // Basic-only quotas read as text in the PRO column ("∞" once pro has it).
     if (feature === 'saved' && tier === 'basic') return '50';
     if (feature === 'saved' && tier === 'pro') return '∞';
     if (feature === 'saved-searches' && tier === 'basic') return '3';
@@ -77,24 +73,18 @@ function cellValue(feature: FeatureKey, tier: Tier): boolean | string {
 }
 
 export interface ProBillingInfo {
-  /** PayFast credentials configured — card checkout can actually run. */
   payfastReady: boolean;
-  /** Service role configured — a payment could actually be recorded. */
   storageReady: boolean;
   sandbox: boolean;
   signedIn: boolean;
-  /** The server says this account has not used its one trial and is not subscribed. */
-  trialAvailable: boolean;
 }
 
 export function ProHubView({ billing }: { billing: ProBillingInfo }) {
   const router = useRouter();
-  const { tier, trial, startTrial, endPro, billingEnforced } = useTier();
-  const { session } = useSavedTenders();
+  const { tier, billingEnforced } = useTier();
   const [yearly, setYearly] = useState(true);
 
   const isPro = tier === 'pro';
-  const trialActive = isPro && trial.active;
 
   return (
     <main className="pb-24">
@@ -119,47 +109,25 @@ export function ProHubView({ billing }: { billing: ProBillingInfo }) {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-[15.5px] font-bold tracking-[-0.02em] text-ink">You&apos;re on Pro</p>
-                <p className="text-[12px] text-ink-2">
-                  {trialActive
-                    ? `Trial active — ${trial.daysLeft} day${trial.daysLeft === 1 ? '' : 's'} left${session.signedIn ? '' : ' (sign in to keep your account)'}`
-                    : 'All features unlocked'}
-                </p>
+                <p className="text-[12px] text-ink-2">All features unlocked</p>
               </div>
               <ProBadge />
             </div>
-            {trialActive && (
-              <div className="h-1.5 w-full bg-white">
-                <div
-                  className="h-full bg-pro transition-[width] duration-700 motion-reduce:transition-none"
-                  style={{ width: `${Math.max(0, Math.min(100, (trial.daysLeft / PRO_TRIAL_DAYS) * 100))}%` }}
-                />
-              </div>
-            )}
             <div className="border-t border-pro-line px-4 py-3">
-              {trialActive ? (
-                <button
-                  type="button"
-                  onClick={endPro}
-                  className="text-[13px] font-semibold text-ink-2 underline decoration-line underline-offset-2"
+              <div className="space-y-2">
+                <p className="text-[12.5px] leading-[1.45] text-ink-2">
+                  {billingEnforced
+                    ? 'Your subscription is verified on our servers.'
+                    : 'Card checkout is not switched on here yet.'}
+                </p>
+                <Link
+                  href="/pro/plan"
+                  className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-navy"
                 >
-                  End trial & switch to Basic
-                </button>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-[12.5px] leading-[1.45] text-ink-2">
-                    {billingEnforced
-                      ? 'Your subscription is verified on our servers.'
-                      : 'Card checkout is not switched on here yet, so plan state lives on this device in the meantime.'}
-                  </p>
-                  <Link
-                    href="/pro/plan"
-                    className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-navy"
-                  >
-                    <ReceiptText size={14} strokeWidth={2.2} aria-hidden />
-                    Plan, invoices & cancellation
-                  </Link>
-                </div>
-              )}
+                  <ReceiptText size={14} strokeWidth={2.2} aria-hidden />
+                  Plan, invoices & cancellation
+                </Link>
+              </div>
             </div>
           </section>
         ) : (
@@ -189,7 +157,6 @@ export function ProHubView({ billing }: { billing: ProBillingInfo }) {
           </section>
         )}
 
-        {/* Pricing toggle */}
         <div className="mt-5 flex items-center justify-center gap-3">
           <button
             type="button"
@@ -228,7 +195,6 @@ export function ProHubView({ billing }: { billing: ProBillingInfo }) {
           </button>
         </div>
 
-        {/* Price card */}
         <section className="mt-3 overflow-hidden rounded-[16px] border-2 border-pro bg-white shadow-card">
           <div className="px-4 py-4 text-center">
             <div className="flex items-center justify-center gap-2">
@@ -259,16 +225,6 @@ export function ProHubView({ billing }: { billing: ProBillingInfo }) {
                     Card checkout is not switched on for this deployment yet — nothing can be charged here.
                   </p>
                 )}
-                {billing.trialAvailable && (
-                  <button
-                    type="button"
-                    onClick={startTrial}
-                    className="flex h-[50px] w-full items-center justify-center gap-2 rounded-md bg-pro text-[#3d3205] shadow-gold-glow transition-colors active:opacity-90"
-                  >
-                    <Crown size={18} strokeWidth={2.2} aria-hidden />
-                    Start {PRO_TRIAL_DAYS}-day free trial
-                  </button>
-                )}
               </div>
             )}
             {isPro && (
@@ -288,7 +244,6 @@ export function ProHubView({ billing }: { billing: ProBillingInfo }) {
           </div>
         </section>
 
-        {/* Comparison */}
         <section className="mt-6">
           <h2 className="mb-2 px-0.5 text-section font-semibold tracking-[-0.02em] text-ink">Compare plans</h2>
           <div className="overflow-x-auto rounded-[16px] border border-line bg-white">
@@ -323,7 +278,6 @@ export function ProHubView({ billing }: { billing: ProBillingInfo }) {
           </p>
         </section>
 
-        {/* FAQ */}
         <section className="mt-6">
           <h2 className="mb-2 px-0.5 text-section font-semibold tracking-[-0.02em] text-ink">Questions</h2>
           <div className="divide-y divide-line rounded-[16px] border border-line bg-white px-4">
