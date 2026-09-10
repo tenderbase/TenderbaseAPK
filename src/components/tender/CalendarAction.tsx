@@ -1,78 +1,117 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { CalendarPlus, Check, Crown, Lock } from 'lucide-react';
+import { useState } from 'react';
+import { CalendarPlus, Check, Crown, Lock, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useTier } from '@/lib/tier-store';
 import { useUpgrade } from '@/components/tier/UpgradeSheet';
-import { buildTenderIcs } from '@/lib/calendar';
+import { saveCalendarEvent } from '@/lib/calendar-remote';
+import { scheduleCalendarAlarm } from '@/lib/native-alarms';
+import { nativeAlarmId } from '@/lib/ai-calendar';
 import type { Tender } from '@/types/tender';
 
-function download(text: string, fileName: string) {
-  const blob = new Blob([text], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 5000);
-}
-
 /**
- * "Add to calendar" — real, client-side .ics export of the closing deadline
- * (Pro feature, calendar-sync). Basic sees the standard gold lock straight
- * into the upgrade sheet; when the closing date cannot be parsed the action
- * hides itself rather than producing a broken file.
+ * Adds a tender's real closing deadline to TenderBase AI Calendar.
+ *
+ * The event uses a stable id so tapping the action again updates the same
+ * calendar item instead of creating duplicates. On the Android Capacitor app,
+ * the same event is also scheduled through Local Notifications so the phone
+ * can sound/vibrate at the configured reminder time.
  */
 export function CalendarAction({ tender }: { tender: Tender }) {
   const { can } = useTier();
   const { openUpgrade } = useUpgrade();
-  const [done, setDone] = useState(false);
+  const [state, setState] = useState<'idle' | 'saving' | 'done' | 'error'>('idle');
 
-  const exportFile = useMemo(() => buildTenderIcs(tender), [tender]);
+  if (!tender.closingDate) return null;
+
   const allowed = can('calendar-sync');
-  if (!exportFile) return null;
+  const eventId = `tender:${tender.id}:closing`;
+
+  const addToCalendar = async () => {
+    if (!allowed) {
+      openUpgrade('calendar-sync', {
+        why: 'Add the tender closing deadline to AI Calendar with a reminder and Android phone alarm.',
+      });
+      return;
+    }
+
+    setState('saving');
+    const event = {
+      id: eventId,
+      title: `Tender closing: ${tender.title}`,
+      notes: [
+        `Organisation: ${tender.organisation}`,
+        `Tender number: ${tender.tenderNumber}`,
+        tender.sourceUrl ? `Open tender: ${tender.sourceUrl}` : '',
+      ].filter(Boolean).join('\n'),
+      startsAt: tender.closingDate,
+      reminderMinutes: 1440,
+      alarmEnabled: true,
+      tenderId: tender.id,
+      source: 'tender' as const,
+    };
+
+    try {
+      const saved = await saveCalendarEvent(event);
+      if (!saved) throw new Error('Unable to save calendar event');
+
+      // Native Android only; harmless on the web. The stable notification id
+      // lets future calendar edits replace the same phone alarm.
+      await scheduleCalendarAlarm(event);
+      setState('done');
+      window.setTimeout(() => setState('idle'), 2600);
+    } catch (error) {
+      console.error('[calendar] failed to add tender closing event', error);
+      setState('error');
+      window.setTimeout(() => setState('idle'), 3500);
+    }
+  };
 
   return (
     <button
       type="button"
-      onClick={() => {
-        if (!allowed) {
-          openUpgrade('calendar-sync', {
-            why: 'One tap drops the closing deadline into your calendar — converted to your timezone, with the tender details attached.',
-          });
-          return;
-        }
-        download(exportFile.ics, exportFile.fileName);
-        setDone(true);
-        window.setTimeout(() => setDone(false), 2600);
-      }}
+      onClick={() => void addToCalendar()}
+      disabled={state === 'saving'}
       className={cn(
         'flex h-11 flex-1 items-center justify-center gap-1.5 rounded-md border text-[13px] font-semibold transition-colors',
         allowed
-          ? done
+          ? state === 'done'
             ? 'border-open/30 bg-open-bg text-open'
-            : 'border-line bg-white text-ink'
+            : state === 'error'
+              ? 'border-urgent/30 bg-urgent-bg text-urgent'
+              : 'border-line bg-white text-ink'
           : 'border-pro-line bg-pro-soft text-[#7a610f]',
       )}
-      aria-label={done ? 'Calendar event downloaded' : 'Add closing date to calendar'}
+      aria-label={
+        state === 'done'
+          ? 'Added to AI Calendar'
+          : state === 'error'
+            ? 'Could not add to AI Calendar'
+            : 'Add closing date to AI Calendar'
+      }
     >
-      {done ? (
+      {state === 'saving' ? (
+        <>
+          <Loader2 size={15} className="animate-spin" aria-hidden />
+          Adding…
+        </>
+      ) : state === 'done' ? (
         <>
           <Check size={15} strokeWidth={2.4} aria-hidden />
-          Downloaded — open to add
+          Added to AI Calendar
         </>
+      ) : state === 'error' ? (
+        <>Couldn’t add — try again</>
       ) : allowed ? (
         <>
           <CalendarPlus size={16} strokeWidth={1.9} aria-hidden />
-          Add to calendar
+          Add to AI Calendar
         </>
       ) : (
         <>
           <CalendarPlus size={16} strokeWidth={1.9} aria-hidden />
-          Add to calendar
+          Add to AI Calendar
           <Lock size={12} strokeWidth={2.2} aria-hidden />
           <Crown size={12} strokeWidth={2.2} aria-hidden />
         </>
