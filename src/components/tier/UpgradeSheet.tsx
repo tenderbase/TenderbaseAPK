@@ -15,7 +15,6 @@ import { useTier } from '@/lib/tier-store';
 import {
   FEATURE_LABELS,
   PRO_MONTHLY_ZAR,
-  PRO_TRIAL_DAYS,
   PRO_YEARLY_ZAR,
   formatZAR,
   type FeatureKey,
@@ -23,11 +22,8 @@ import {
 
 interface UpgradeCopy {
   title?: string;
-  /** Overrides the sheet's headline (default: "<feature> is a Pro feature"). */
   headline?: string;
-  /** One line on why it matters — replaces the generic default. */
   why?: string;
-  /** Overrides the three perk bullets shown under the copy. */
   bullets?: string[];
 }
 
@@ -45,31 +41,19 @@ const FEATURE_WHY: Partial<Record<FeatureKey, string>> = {
 };
 
 interface UpgradeContextValue {
-  /** Opens the upgrade sheet for a feature. */
   openUpgrade: (feature: FeatureKey, copy?: UpgradeCopy) => void;
 }
 
 const UpgradeContext = createContext<UpgradeContextValue | null>(null);
 
-/**
- * The universal Pro gate (blueprint §5.12): a labelled lock calls
- * openUpgrade(feature) and the sheet explains, prices and offers the trial.
- * Always dismissible. The trial runs through the server (one per account) and
- * card checkout lives on the plan screen, which is honest about whether
- * payments are switched on for this deployment.
- */
 export function UpgradeProvider({ children }: { children: ReactNode }) {
-  const { tier, startTrial } = useTier();
-  const [state, setState] = useState<{
-    feature: FeatureKey;
-    copy: UpgradeCopy;
-  } | null>(null);
+  const { tier } = useTier();
+  const [state, setState] = useState<{ feature: FeatureKey; copy: UpgradeCopy } | null>(null);
 
   const openUpgrade = useCallback((feature: FeatureKey, copy: UpgradeCopy = {}) => {
     setState({ feature, copy });
   }, []);
   const close = useCallback(() => setState(null), []);
-
   const value = useMemo(() => ({ openUpgrade }), [openUpgrade]);
 
   return (
@@ -90,13 +74,11 @@ export function UpgradeProvider({ children }: { children: ReactNode }) {
               </p>
 
               <ul className="mt-4 space-y-2">
-                {(state.copy.bullets ??
-                  [
-                    `${FEATURE_LABELS[state.feature]}`,
-                    'Unlimited AI deep summaries & follow-ups',
-                    "Full Today's Matches with reasons",
-                    'Instant-match push notifications',
-                  ].slice(0, 3)).map((line) => (
+                {(state.copy.bullets ?? [
+                  `${FEATURE_LABELS[state.feature]}`,
+                  'Unlimited AI deep summaries & follow-ups',
+                  "Full Today's Matches with reasons",
+                ]).slice(0, 3).map((line) => (
                   <li key={line} className="flex items-start gap-2 text-[13px] text-ink">
                     <Check size={15} strokeWidth={2.4} className="mt-0.5 shrink-0 text-open" aria-hidden />
                     {line}
@@ -108,26 +90,12 @@ export function UpgradeProvider({ children }: { children: ReactNode }) {
                 <p className="text-[13px] font-semibold text-ink">
                   {formatZAR(PRO_MONTHLY_ZAR)}/month · or {formatZAR(PRO_YEARLY_ZAR)}/year
                 </p>
-                <p className="mt-0.5 text-[11.5px] text-ink-2">
-                  {PRO_TRIAL_DAYS}-day free trial — no charge today
-                </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  startTrial();
-                  close();
-                }}
-                className="mt-3 flex h-[52px] w-full items-center justify-center gap-2 rounded-md bg-pro text-[#3d3205] shadow-gold-glow transition-colors active:opacity-90"
-              >
-                <Crown size={18} strokeWidth={2.2} aria-hidden />
-                Start {PRO_TRIAL_DAYS}-day free trial
-              </button>
               <Link
                 href="/pro/plan"
                 onClick={close}
-                className="mt-2 flex h-[46px] w-full items-center justify-center rounded-md border border-line bg-white text-[14px] font-semibold text-ink"
+                className="mt-3 flex h-[52px] w-full items-center justify-center rounded-md bg-pro text-[14px] font-bold text-[#3d3205] shadow-gold-glow"
               >
                 See plans & pay by card
               </Link>
@@ -144,9 +112,7 @@ export function UpgradeProvider({ children }: { children: ReactNode }) {
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-open-bg text-open">
                 <Check size={22} strokeWidth={2.4} aria-hidden />
               </div>
-              <h3 className="mt-3 text-[17px] font-bold tracking-[-0.02em] text-ink">
-                You&apos;re on Pro
-              </h3>
+              <h3 className="mt-3 text-[17px] font-bold tracking-[-0.02em] text-ink">You&apos;re on Pro</h3>
               <p className="mx-auto mt-1.5 max-w-[260px] text-[13.5px] leading-[1.5] text-ink-2">
                 {FEATURE_LABELS[state.feature]} is already unlocked on your plan.
               </p>
