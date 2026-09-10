@@ -5,8 +5,13 @@ import { createHash } from 'node:crypto';
 import {
   PAYFAST_FIELD_ORDER,
   PLANS,
+  apiSignature,
   buildCheckoutRequest,
+  buildSubscriptionCancelRequest,
+  formEncode,
   formatAmount,
+  isoWithOffset,
+  itnConfirmBody,
   itnSignature,
   itnSignatureBase,
   mapPaymentStatus,
@@ -274,4 +279,108 @@ test('nextPeriodEnd adds a month monthly, a year annually, from billing_date', (
   assert.equal(nextPeriodEnd('2026-01-15T00:00:00.000Z', 6), '2027-01-15T00:00:00.000Z');
   // Garbage in -> a sane period end, never an Invalid Date.
   assert.ok(!Number.isNaN(new Date(nextPeriodEnd('not-a-date', 3)).getTime()));
+});
+
+// ---------------------------------------------------------------------------
+// U8-C: embedded checkout + the Recurring Billing API
+// ---------------------------------------------------------------------------
+
+test('formEncode urlencodes every pair, in order, including the signature', () => {
+  assert.equal(
+    formEncode({ merchant_id: '10000100', item_name: 'TenderBase Pro', signature: 'ab12' }),
+    'merchant_id=10000100&item_name=TenderBase+Pro&signature=ab12',
+  );
+  // PHP-style: '+' for spaces, '~' percent-encoded, RFC3986 unreserved kept.
+  assert.equal(formEncode({ item_name: 'a b~c-d_e.f' }), 'item_name=a+b%7Ec-d_e.f');
+});
+
+test('the validate request strips the signature (PayFast stops reading there)', () => {
+  const posted = {
+    m_payment_id: 'abc',
+    pf_payment_id: '1089250',
+    payment_status: 'COMPLETE',
+    item_name: 'test product',
+    amount_gross: '249.00',
+    merchant_id: '10000100',
+    signature: 'deadbeef',
+  };
+  const body = itnConfirmBody(posted);
+  assert.ok(!body.includes('signature'));
+  assert.ok(!body.includes('deadbeef'));
+  assert.ok(body.startsWith('m_payment_id=abc&pf_payment_id=1089250&payment_status=COMPLETE'));
+  assert.ok(body.includes('item_name=test+product'));
+  assert.equal(body.endsWith('merchant_id=10000100'), true);
+});
+
+test('an empty posted value is left out of the confirmation rather than sent blank', () => {
+  assert.equal(itnConfirmBody({ a: '1', b: '', c: '2' }), 'a=1&c=2');
+});
+
+test('apiSignature sorts alphabetically and salts with the passphrase in place', () => {
+  // Manual reference: alphabetical over every submitted variable INCLUDING
+  // passphrase, urlencoded, '&'-joined (no trailing separator), MD5.
+  const expected = md5Hex('merchant-id=10000100&passphrase=secret&timestamp=2026-01-01T00%3A00%3A00%2B00%3A00&version=v1');
+  const got = apiSignature(
+    { version: 'v1', 'merchant-id': '10000100', timestamp: '2026-01-01T00:00:00+00:00' },
+    'secret',
+  );
+  assert.equal(got, expected);
+});
+
+test('apiSignature ignores the testing flag and empty values', () => {
+  const withTesting = apiSignature(
+    { version: 'v1', 'merchant-id': '10000100', timestamp: 'T', testing: 'true', extra: '' },
+    null,
+  );
+  const without = apiSignature({ version: 'v1', 'merchant-id': '10000100', timestamp: 'T' }, null);
+  assert.equal(withTesting, without);
+});
+
+test('the payment signature and the API signature are different beasts', () => {
+  const vars = { merchant_id: '10000100', version: 'v1', timestamp: '2026-01-01T00:00:00' };
+  assert.notEqual(paymentSignature(vars, 'secret'), apiSignature(vars, 'secret'));
+});
+
+test('isoWithOffset renders an ISO-8601 timestamp with the local offset', () => {
+  // 2026-03-01T09:30:00Z in a UTC+2 zone is written with +02:00.
+  const date = new Date(Date.UTC(2026, 2, 1, 9, 30, 0));
+  const utc = isoWithOffset(date);
+  assert.match(utc, /^2026-03-01T09:30:00[+-]\d{2}:\d{2}$/);
+  assert.equal(utc.endsWith(':00'), true);
+});
+
+test('the cancel request targets the token path with signed v1 headers', () => {
+  const req = buildSubscriptionCancelRequest({
+    token: 'a3b3ae55-ab8b-b388-df23-4e6882b86ce0',
+    merchantId: '10000100',
+    passphrase: 'secret',
+    sandbox: true,
+    now: new Date(Date.UTC(2026, 2, 1, 9, 30, 0)),
+  });
+  assert.equal(req.method, 'PUT');
+  assert.ok(req.url.startsWith('https://api.payfast.co.za/subscriptions/a3b3ae55-ab8b-b388-df23-4e6882b86ce0/cancel'));
+  assert.ok(req.url.endsWith('?testing=true'), 'sandbox calls carry testing=true');
+  assert.equal(req.headers.version, 'v1');
+  assert.equal(req.headers['merchant-id'], '10000100');
+  assert.match(req.headers.timestamp, /^2026-03-01T/);
+  // The header signature must be the API (alphabetical) one over the same vars.
+  assert.equal(
+    req.headers.signature,
+    apiSignature(
+      { 'merchant-id': req.headers['merchant-id'], version: 'v1', timestamp: req.headers.timestamp },
+      'secret',
+    ),
+  );
+});
+
+test('live cancel requests do not carry the testing flag but still sign', () => {
+  const req = buildSubscriptionCancelRequest({
+    token: 'tok',
+    merchantId: '10000100',
+    passphrase: null,
+    sandbox: false,
+    now: new Date(Date.UTC(2026, 2, 1, 9, 30, 0)),
+  });
+  assert.equal(req.url, 'https://api.payfast.co.za/subscriptions/tok/cancel');
+  assert.equal(req.headers.signature.length, 32);
 });

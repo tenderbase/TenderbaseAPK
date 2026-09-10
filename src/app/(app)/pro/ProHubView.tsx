@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ChevronLeft, Crown, Check, Minus, Sparkles, Bell, FileSearch, Zap,
+  ChevronLeft, Crown, Check, Minus, Sparkles, Bell, FileSearch, Zap, TriangleAlert, ReceiptText,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { PlanChip, ProBadge } from '@/components/ui/PlanChip';
+import { SubscribeButton } from '@/components/billing/SubscribeButton';
 import { useTier } from '@/lib/tier-store';
 import { useSavedTenders } from '@/lib/saved-store';
 import {
@@ -31,7 +33,8 @@ const PERKS: { icon: typeof Crown; title: string; body: string }[] = [
 ];
 
 const FAQS: { q: string; a: string }[] = [
-  { q: 'How does the 14-day trial work?', a: 'Start the trial and every Pro feature unlocks immediately. You are never charged during the trial. When billing is connected you can cancel anytime.' },
+  { q: 'How does the 14-day trial work?', a: 'Start the trial and every Pro feature unlocks immediately. You are never charged during the trial and nothing renews by itself — when the 14 days are up the account returns to Basic.' },
+  { q: 'How do I pay for Pro?', a: 'By card through PayFast, South Africa\'s payment gateway. It is a recurring subscription you can cancel yourself on the plan screen; you keep Pro until the period you paid for ends.' },
   { q: 'What happens when the trial ends?', a: 'You drop to Basic automatically — your saved tenders, searches and profile stay intact. Nothing you saved is deleted.' },
   { q: 'Can I stay on Basic forever?', a: 'Yes. Basic is a free account with 50 saved tenders, top-3 daily matches and in-app alerts. Pro adds unlimited depth when you need it.' },
   { q: 'Is browsing ever limited?', a: 'No. The full catalogue, documents and details are free for everyone — including guests. Pro is about intelligence, not access.' },
@@ -73,7 +76,18 @@ function cellValue(feature: FeatureKey, tier: Tier): boolean | string {
   return false;
 }
 
-export function ProHubView() {
+export interface ProBillingInfo {
+  /** PayFast credentials configured — card checkout can actually run. */
+  payfastReady: boolean;
+  /** Service role configured — a payment could actually be recorded. */
+  storageReady: boolean;
+  sandbox: boolean;
+  signedIn: boolean;
+  /** The server says this account has not used its one trial and is not subscribed. */
+  trialAvailable: boolean;
+}
+
+export function ProHubView({ billing }: { billing: ProBillingInfo }) {
   const router = useRouter();
   const { tier, trial, startTrial, endPro, billingEnforced } = useTier();
   const { session } = useSavedTenders();
@@ -131,11 +145,20 @@ export function ProHubView() {
                   End trial & switch to Basic
                 </button>
               ) : (
-                <p className="text-[12.5px] leading-[1.45] text-ink-2">
-                  {billingEnforced
-                    ? 'Your subscription is verified on our servers — invoices and plan management are on the Pro plan screen.'
-                    : 'Billing management (invoices, payment method) connects in a later phase — your plan state is saved on this device for now.'}
-                </p>
+                <div className="space-y-2">
+                  <p className="text-[12.5px] leading-[1.45] text-ink-2">
+                    {billingEnforced
+                      ? 'Your subscription is verified on our servers.'
+                      : 'Card checkout is not switched on here yet, so plan state lives on this device in the meantime.'}
+                  </p>
+                  <Link
+                    href="/pro/plan"
+                    className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-navy"
+                  >
+                    <ReceiptText size={14} strokeWidth={2.2} aria-hidden />
+                    Plan, invoices & cancellation
+                  </Link>
+                </div>
               )}
             </div>
           </section>
@@ -222,14 +245,31 @@ export function ProHubView() {
                 : 'Billed monthly · cancel anytime'}
             </p>
             {!isPro && (
-              <button
-                type="button"
-                onClick={startTrial}
-                className="mt-3.5 flex h-[50px] w-full items-center justify-center gap-2 rounded-md bg-pro text-[#3d3205] shadow-gold-glow transition-colors active:opacity-90"
-              >
-                <Crown size={18} strokeWidth={2.2} aria-hidden />
-                Start {PRO_TRIAL_DAYS}-day free trial
-              </button>
+              <div className="mt-3.5 space-y-2">
+                {billing.payfastReady && billing.storageReady ? (
+                  <SubscribeButton
+                    plan={yearly ? 'pro-yearly' : 'pro-monthly'}
+                    label={`Subscribe — ${yearly ? formatZAR(PRO_YEARLY_ZAR) : formatZAR(PRO_MONTHLY_ZAR)}/${yearly ? 'yr' : 'mo'}`}
+                    signingIn={!billing.signedIn}
+                    sandbox={billing.sandbox}
+                  />
+                ) : (
+                  <p className="flex items-start justify-center gap-1.5 rounded-[12px] bg-canvas px-3 py-2.5 text-center text-[11.5px] leading-[1.45] text-ink-2">
+                    <TriangleAlert size={13} strokeWidth={2.2} className="mt-[1.5px] shrink-0 text-soon" aria-hidden />
+                    Card checkout is not switched on for this deployment yet — nothing can be charged here.
+                  </p>
+                )}
+                {billing.trialAvailable && (
+                  <button
+                    type="button"
+                    onClick={startTrial}
+                    className="flex h-[50px] w-full items-center justify-center gap-2 rounded-md bg-pro text-[#3d3205] shadow-gold-glow transition-colors active:opacity-90"
+                  >
+                    <Crown size={18} strokeWidth={2.2} aria-hidden />
+                    Start {PRO_TRIAL_DAYS}-day free trial
+                  </button>
+                )}
+              </div>
             )}
             {isPro && (
               <p className="mt-3.5 text-[12.5px] font-medium text-ink-2">
@@ -239,6 +279,12 @@ export function ProHubView() {
             <p className="mt-2 text-[11px] text-ink-3">
               Basic stays free forever: 50 saved tenders, top-3 daily matches, in-app alerts.
             </p>
+            {billing.signedIn && (
+              <Link href="/pro/plan" className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] font-semibold text-navy">
+                <ReceiptText size={14} strokeWidth={2.2} aria-hidden />
+                Manage plan & invoices
+              </Link>
+            )}
           </div>
         </section>
 

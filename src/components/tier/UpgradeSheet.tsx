@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Crown, Check } from 'lucide-react';
+import Link from 'next/link';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { useTier } from '@/lib/tier-store';
 import {
@@ -53,7 +54,9 @@ const UpgradeContext = createContext<UpgradeContextValue | null>(null);
 /**
  * The universal Pro gate (blueprint §5.12): a labelled lock calls
  * openUpgrade(feature) and the sheet explains, prices and offers the trial.
- * Always dismissible; the actual checkout is wired with billing (W8).
+ * Always dismissible. The trial runs through the server (one per account) and
+ * card checkout lives on the plan screen, which is honest about whether
+ * payments are switched on for this deployment.
  */
 export function UpgradeProvider({ children }: { children: ReactNode }) {
   const { tier, startTrial } = useTier();
@@ -121,6 +124,13 @@ export function UpgradeProvider({ children }: { children: ReactNode }) {
                 <Crown size={18} strokeWidth={2.2} aria-hidden />
                 Start {PRO_TRIAL_DAYS}-day free trial
               </button>
+              <Link
+                href="/pro/plan"
+                onClick={close}
+                className="mt-2 flex h-[46px] w-full items-center justify-center rounded-md border border-line bg-white text-[14px] font-semibold text-ink"
+              >
+                See plans & pay by card
+              </Link>
               <button
                 type="button"
                 onClick={close}

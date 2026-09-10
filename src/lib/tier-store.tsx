@@ -23,10 +23,11 @@ import { TIER_COOKIE, TRIAL_END_COOKIE } from '@/lib/tier-cookies';
 /**
  * Client entitlement store.
  *
- * State is seeded from the server (which reads the same cookies), so the
- * first render and SSR agree. Changing tier writes the cookie + state, which
- * is the mechanism the whole app previews with until billing (W8) replaces
- * the cookie with a verified subscription.
+ * State is seeded from the server, so the first render and SSR agree. When
+ * the server resolved the tier from a verified billing row (`billingEnforced`)
+ * this store mirrors it and every entitlement action goes through the billing
+ * API — a browser cannot grant itself Pro. Otherwise the cookie is the
+ * mechanism, which is how the whole app is previewed without credentials.
  */
 
 function daysUntilTrialEnd(endIso: string | null): number {

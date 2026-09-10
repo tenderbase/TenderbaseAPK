@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { processItn } from '@/lib/billing.server';
+import { fromPayfastIp, processItn } from '@/lib/billing.server';
 
 /**
  * PayFast ITN (Instant Transaction Notification) webhook.
@@ -24,6 +24,16 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   if (!rawBody) {
     return new NextResponse('EMPTY ITN', { status: 400 });
+  }
+
+  // Defence in depth: the signature already proves the payload was signed with
+  // our key, and the amount is checked against our own row. A request that is
+  // also not from a PayFast address is worth a log line, but it does not
+  // decide the outcome on its own — a false negative here (proxy headers,
+  // IP changes) must never bin a real payment.
+  const fromPayfast = await fromPayfastIp(req.headers.get('x-forwarded-for'));
+  if (!fromPayfast) {
+    console.warn('[billing] ITN from unexpected source:', req.headers.get('x-forwarded-for') ?? 'no address');
   }
 
   const outcome = await processItn(rawBody);

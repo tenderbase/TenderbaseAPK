@@ -8,6 +8,9 @@ import {
   PLANS,
   buildCheckoutRequest,
   formatAmount,
+  buildSubscriptionCancelRequest,
+  formEncode,
+  itnConfirmBody,
   nextPeriodEnd,
   parseItn,
   planById,
@@ -87,23 +90,33 @@ function serviceClient(): SupabaseClient | null {
 // Checkout
 // ---------------------------------------------------------------------------
 
+export type CheckoutReason =
+  | 'not_configured'
+  | 'storage_unconfigured'
+  | 'unknown_plan'
+  | 'record_failed';
+
 export type CheckoutOutcome =
   | { ok: true; request: CheckoutRequest }
-  | { ok: false; reason: 'not_configured' | 'storage_unconfigured' | 'unknown_plan' | 'record_failed' };
+  | { ok: false; reason: CheckoutReason };
 
-/**
- * Records the pending payment and builds the signed PayFast form.
- *
- * The amount always comes from the server-side plan catalogue — the client
- * sends only a plan id, never a price.
- */
-export async function startCheckout(input: {
+interface CheckoutInput {
   plan: string;
   userId: string;
   email: string;
   name: { first?: string; last?: string };
   origin: string;
-}): Promise<CheckoutOutcome> {
+}
+
+/**
+ * Records the pending payment and builds the signed PayFast request.
+ *
+ * The amount always comes from the server-side plan catalogue — the client
+ * sends only a plan id, never a price.
+ */
+async function prepareCheckout(
+  input: CheckoutInput,
+): Promise<{ ok: true; request: CheckoutRequest } | { ok: false; reason: CheckoutReason }> {
   const config = payfastConfig();
   if (!config) return { ok: false, reason: 'not_configured' };
 
@@ -162,6 +175,117 @@ export async function startCheckout(input: {
   return { ok: true, request };
 }
 
+/** Hosted redirect flow: the browser posts the signed form to PayFast. */
+export async function startCheckout(input: CheckoutInput): Promise<CheckoutOutcome> {
+  return prepareCheckout(input);
+}
+
+export type OnsiteCheckoutOutcome =
+  | { ok: true; uuid: string }
+  | { ok: false; reason: CheckoutReason | 'payfast_unreachable' };
+
+/**
+ * Embedded flow (PayFast "Onsite Payments"): we POST the same signed fields to
+ * /onsite/process server-to-server and hand the returned uuid to the browser,
+ * which calls `payfast_do_onsite_payment({ uuid })` to open the payment modal
+ * *on our own page* — the customer never leaves the app.
+ *
+ * The signing rules are identical to the hosted flow; only the endpoint and
+ * the transport differ.
+ */
+export async function startOnsiteCheckout(input: CheckoutInput): Promise<OnsiteCheckoutOutcome> {
+  const prepared = await prepareCheckout(input);
+  if (!prepared.ok) return prepared;
+
+  const config = payfastConfig();
+  if (!config) return { ok: false, reason: 'not_configured' };
+  const host = config.sandbox ? 'sandbox.payfast.co.za' : 'www.payfast.co.za';
+
+  try {
+    const res = await fetch(`https://${host}/onsite/process`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formEncode(prepared.request.fields),
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      console.error('[billing] onsite/process HTTP', res.status);
+      return { ok: false, reason: 'payfast_unreachable' };
+    }
+    const json = (await res.json()) as { uuid?: string };
+    if (!json.uuid) {
+      console.error('[billing] onsite/process returned no uuid');
+      return { ok: false, reason: 'payfast_unreachable' };
+    }
+    return { ok: true, uuid: json.uuid };
+  } catch (e) {
+    console.error('[billing] onsite/process failed:', e instanceof Error ? e.message : e);
+    return { ok: false, reason: 'payfast_unreachable' };
+  }
+}
+
+export type CancelOutcome =
+  | { ok: true; periodEnd: string | null }
+  | { ok: false; reason: 'not_configured' | 'storage_unconfigured' | 'no_subscription' | 'payfast_rejected' };
+
+/**
+ * Cancel the recurring billing at PayFast.
+ *
+ * This stops future debits; it does NOT revoke access already paid for. The
+ * account keeps Pro until `current_period_end` and the entitlement resolver
+ * reports `cancel_at_period_end` in the meantime. If PayFast cannot be
+ * reached we change nothing and say so — a "cancelled" screen over a live
+ * subscription would be a lie.
+ */
+export async function cancelSubscription(userId: string): Promise<CancelOutcome> {
+  const config = payfastConfig();
+  if (!config) return { ok: false, reason: 'not_configured' };
+  const supabase = serviceClient();
+  if (!supabase) return { ok: false, reason: 'storage_unconfigured' };
+
+  const { data: row } = await supabase
+    .from('billing_subscriptions')
+    .select('payfast_token, status, current_period_end')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  const sub = row as
+    | { payfast_token: string | null; status: string; current_period_end: string | null }
+    | null;
+  const token = sub?.payfast_token?.trim();
+  if (!sub || !token || sub.status === 'trialing') return { ok: false, reason: 'no_subscription' };
+
+  const request = buildSubscriptionCancelRequest({
+    token,
+    merchantId: config.merchantId,
+    passphrase: config.passphrase,
+    sandbox: config.sandbox,
+  });
+
+  try {
+    const res = await fetch(request.url, { method: request.method, headers: request.headers, cache: 'no-store' });
+    const json = (await res.json().catch(() => null)) as { data?: { response?: unknown } } | null;
+    if (!res.ok || json?.data?.response !== true) {
+      console.error('[billing] cancel rejected by PayFast:', res.status);
+      return { ok: false, reason: 'payfast_rejected' };
+    }
+  } catch (e) {
+    console.error('[billing] cancel failed:', e instanceof Error ? e.message : e);
+    return { ok: false, reason: 'payfast_rejected' };
+  }
+
+  const { error } = await supabase
+    .from('billing_subscriptions')
+    .update({ cancel_at_period_end: true, updated_at: new Date().toISOString() })
+    .eq('user_id', userId);
+  if (error) {
+    console.error('[billing] could not record cancellation:', error.message);
+    return { ok: false, reason: 'storage_unconfigured' };
+  }
+
+  return { ok: true, periodEnd: sub.current_period_end };
+}
+
 // ---------------------------------------------------------------------------
 // ITN processing
 // ---------------------------------------------------------------------------
@@ -173,15 +297,53 @@ export type ItnOutcome =
 /** Server-to-server confirmation with PayFast's validate endpoint. */
 async function confirmWithPayfast(rawBody: string, sandbox: boolean): Promise<boolean> {
   const { validateUrl } = payfastEndpoints(sandbox);
+  // PayFast's own sample strips the signature and posts everything up to it
+  // (`$pfParamString` stops at the `signature` key) — sending the ITN verbatim
+  // would include a field their validator does not expect.
+  const body = itnConfirmBody(parseItn(rawBody));
+
   const res = await fetch(validateUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: rawBody,
+    body,
     cache: 'no-store',
   });
   if (!res.ok) return false;
   const text = (await res.text()).trim().toUpperCase();
   return text === 'VALID';
+}
+
+// PayFast's documented source IPs (the four hosts it posts ITNs from). We
+// resolve them per request rather than pinning addresses, which would rot.
+const PAYFAST_ITN_HOSTS = [
+  'www.payfast.co.za',
+  'sandbox.payfast.co.za',
+  'w1w.payfast.co.za',
+  'w2w.payfast.co.za',
+];
+
+/**
+ * Is this request from a PayFast host? Defence in depth next to the signature
+ * check. Returns false when we cannot tell — a whitelist that fails open is
+ * not a whitelist, and the remaining checks still decide the outcome, so the
+ * only cost of a false negative is a retried ITN.
+ */
+export async function fromPayfastIp(forwardedFor: string | null): Promise<boolean> {
+  const ip = (forwardedFor ?? '').split(',')[0]?.trim();
+  if (!ip) return false;
+
+  const { lookup } = await import('node:dns/promises');
+  const addrs = await Promise.all(
+    PAYFAST_ITN_HOSTS.map(async (host) => {
+      try {
+        const resolved = await lookup(host, { all: true });
+        return resolved.map((r) => r.address);
+      } catch {
+        return [] as string[];
+      }
+    }),
+  );
+  return addrs.flat().includes(ip);
 }
 
 interface PaymentRow {

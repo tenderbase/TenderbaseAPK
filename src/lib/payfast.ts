@@ -194,6 +194,98 @@ export function buildCheckoutRequest(input: {
   return { processUrl: input.processUrl, fields };
 }
 
+/**
+ * The urlencoded body PayFast expects for server-to-server calls: the same
+ * name/value pairs, in the same order, including `signature`.
+ */
+export function formEncode(fields: Record<string, string>): string {
+  return Object.entries(fields)
+    .map(([k, v]) => `${k}=${phpUrlEncode(v)}`)
+    .join('&');
+}
+
+// ---------------------------------------------------------------------------
+// API signature (different rules from the payment signature)
+// ---------------------------------------------------------------------------
+
+/**
+ * PayFast API signature — used by the Recurring Billing API (cancel, pause,
+ * fetch). NOT the same as the payment signature:
+ *
+ *   - every submitted variable (headers, body, query string, passphrase) is
+ *     sorted ALPHABETICALLY;
+ *   - the passphrase participates in that sort (it is not appended);
+ *   - `testing` is explicitly excluded when in test mode;
+ *   - values are urlencoded, joined with '&', then MD5'd.
+ *
+ * Docs: "Do not use the custom payment signature format, which requires pairs
+ * to be listed in the order in which they appear in the documentation!"
+ */
+export function apiSignature(
+  vars: Record<string, string | undefined>,
+  passphrase: string | null | undefined,
+): string {
+  const all: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(vars)) {
+    if (key === 'testing') continue; // excluded from the signature
+    const value = raw?.trim() ?? '';
+    if (value !== '') all[key] = value;
+  }
+  if (passphrase) all.passphrase = passphrase.trim();
+
+  const base = Object.keys(all)
+    .sort()
+    .map((k) => `${k}=${phpUrlEncode(all[k])}`)
+    .join('&');
+  return md5Hex(base);
+}
+
+/** ISO-8601 timestamp with offset, the format the PayFast API requires. */
+export function isoWithOffset(date: Date = new Date()): string {
+  const pad = (n: number, w = 2) => String(Math.abs(n)).padStart(w, '0');
+  const offsetMin = -date.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
+    `${sign}${pad(Math.floor(Math.abs(offsetMin) / 60))}:${pad(Math.abs(offsetMin) % 60)}`
+  );
+}
+
+export interface PayfastApiRequest {
+  url: string;
+  method: 'PUT';
+  headers: Record<string, string>;
+}
+
+/**
+ * `PUT /subscriptions/{token}/cancel` — stops a recurring subscription at
+ * PayFast entirely. Cancelling does NOT revoke access we already sold: the
+ * account keeps Pro until its paid period ends (see entitlement.ts).
+ */
+export function buildSubscriptionCancelRequest(input: {
+  token: string;
+  merchantId: string;
+  passphrase: string | null;
+  sandbox: boolean;
+  now?: Date;
+}): PayfastApiRequest {
+  const timestamp = isoWithOffset(input.now ?? new Date());
+  const signed = { 'merchant-id': input.merchantId, version: 'v1', timestamp };
+  return {
+    url:
+      `https://api.payfast.co.za/subscriptions/${encodeURIComponent(input.token)}/cancel` +
+      (input.sandbox ? '?testing=true' : ''),
+    method: 'PUT',
+    headers: {
+      'merchant-id': input.merchantId,
+      version: 'v1',
+      timestamp,
+      signature: apiSignature(signed, input.passphrase),
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // ITN (Instant Transaction Notification)
 // ---------------------------------------------------------------------------
@@ -227,6 +319,17 @@ export function itnSignature(
   passphrase: string | null | undefined,
 ): string {
   return md5Hex(itnSignatureBase(fields, passphrase));
+}
+
+/**
+ * The body we POST back to PayFast's `/eng/query/validate` to confirm an ITN.
+ *
+ * Their reference implementation walks the posted variables and stops at
+ * `signature`, so the confirmation carries every pair except that one — NOT
+ * the payload verbatim, and without the passphrase.
+ */
+export function itnConfirmBody(fields: Record<string, string>): string {
+  return joinPairs(Object.entries(fields).filter(([key]) => key !== 'signature'));
 }
 
 /** Constant-time hex comparison (length-safe). */
