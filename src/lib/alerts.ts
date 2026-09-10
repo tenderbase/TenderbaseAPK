@@ -39,12 +39,23 @@ export interface AlertEntry {
   score?: number;
 }
 
-/** Days until close for an open tender, or null when closed/cancelled. */
+/**
+ * Days until close for an open tender, or null when closed/cancelled.
+ *
+ * `now` is forwarded to BOTH the status check and the day count: computing
+ * the status against the wall clock while counting days from an injected
+ * `now` lets the two disagree (a tender rendered "today" from a fixed clock
+ * would be judged closed by real time), which is exactly the class of bug
+ * this derived-status design exists to prevent.
+ */
 export function openTenderDaysLeft(
   tender: Pick<TenderWithUserState, 'closingDate' | 'lifecycleStatus'>,
   now: Date = new Date(),
 ): number | null {
-  const status = getStatus({ closingDate: tender.closingDate, lifecycleStatus: tender.lifecycleStatus });
+  const status = getStatus(
+    { closingDate: tender.closingDate, lifecycleStatus: tender.lifecycleStatus },
+    now,
+  );
   if (status === 'closed' || status === 'cancelled') return null;
   if (!tender.closingDate) return null;
   const d = daysUntil(tender.closingDate, now);
