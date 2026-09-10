@@ -4,10 +4,12 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   ALLOWANCES,
   FEATURE_ACCESS,
@@ -51,6 +53,8 @@ export interface EntitlementValue {
   limit: (feature: FeatureKey) => number | undefined;
   /** One-off allowances below the access tier (e.g. Basic's 1 deep demo). */
   allowance: (feature: FeatureKey) => number | undefined;
+  /** True when the tier comes from a verified billing row (not a cookie). */
+  billingEnforced: boolean;
   setTier: (tier: Tier) => void;
   startTrial: () => void;
   endPro: () => void;
@@ -62,25 +66,66 @@ export function TierProvider({
   children,
   initialTier,
   initialTrialEnd,
+  billingEnforced = false,
 }: {
   children: ReactNode;
   initialTier: Tier;
   initialTrialEnd: string | null;
+  /**
+   * True when the server resolved the tier from this account's verified
+   * billing row. Entitlement actions then go through the billing API and the
+   * cookie/dev grants are disabled — a browser cannot grant itself Pro.
+   */
+  billingEnforced?: boolean;
 }) {
+  const router = useRouter();
   const [tier, setTierState] = useState<Tier>(initialTier);
   const [trialEnd, setTrialEnd] = useState<string | null>(initialTrialEnd);
 
-  const setTier = useCallback((next: Tier) => {
-    setTierState(next);
-    try {
-      document.cookie = `${TIER_COOKIE}=${next}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
-    } catch {
-      /* cookie unavailable (SSR) — state still updates for this session */
-    }
-    if (next !== 'pro') setTrialEnd(null);
-  }, []);
+  // The server is authoritative: when it re-renders with a new entitlement
+  // (after a trial starts, a payment clears, or a period lapses), follow it.
+  useEffect(() => {
+    setTierState(initialTier);
+    setTrialEnd(initialTrialEnd);
+  }, [initialTier, initialTrialEnd]);
+
+  const setTier = useCallback(
+    (next: Tier) => {
+      if (billingEnforced) {
+        // Preview-only control. In billing mode the tier is a server fact.
+        console.warn('[tier] setTier ignored — entitlements are server-verified');
+        return;
+      }
+      setTierState(next);
+      try {
+        document.cookie = `${TIER_COOKIE}=${next}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
+      } catch {
+        /* cookie unavailable (SSR) — state still updates for this session */
+      }
+      if (next !== 'pro') setTrialEnd(null);
+    },
+    [billingEnforced],
+  );
 
   const startTrial = useCallback(() => {
+    if (billingEnforced) {
+      void fetch('/api/billing/trial', { method: 'POST' })
+        .then(async (res) => {
+          if (res.status === 401) {
+            router.push('/login?next=/pro');
+            return;
+          }
+          if (!res.ok) {
+            console.error('[tier] trial not started:', res.status);
+            return;
+          }
+          router.refresh(); // server re-resolves the entitlement from the row
+        })
+        .catch(() => {
+          /* offline — the sheet stays open and the user can retry */
+        });
+      return;
+    }
     const end = new Date(Date.now() + PRO_TRIAL_DAYS * 86_400_000).toISOString();
     setTrialEnd(end);
     try {
@@ -89,11 +134,21 @@ export function TierProvider({
       /* ignore */
     }
     setTier('pro');
-  }, [setTier]);
+  }, [billingEnforced, router, setTier]);
 
   const endPro = useCallback(() => {
+    if (billingEnforced) {
+      void fetch('/api/billing/trial', { method: 'DELETE' })
+        .then((res) => {
+          if (res.ok) router.refresh();
+        })
+        .catch(() => {
+          /* offline — nothing changes, which is the honest outcome */
+        });
+      return;
+    }
     setTier('basic');
-  }, [setTier]);
+  }, [billingEnforced, router, setTier]);
 
   const value = useMemo<EntitlementValue>(() => {
     const daysLeft = daysUntilTrialEnd(trialEnd);
@@ -112,11 +167,12 @@ export function TierProvider({
       },
       limit: (f) => LIMITS[tier][f],
       allowance: (f) => ALLOWANCES[f]?.[tier],
+      billingEnforced,
       setTier,
       startTrial,
       endPro,
     };
-  }, [tier, trialEnd, setTier, startTrial, endPro]);
+  }, [tier, trialEnd, billingEnforced, setTier, startTrial, endPro]);
 
   return <EntitlementContext.Provider value={value}>{children}</EntitlementContext.Provider>;
 }

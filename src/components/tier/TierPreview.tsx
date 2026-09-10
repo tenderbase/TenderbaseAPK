@@ -15,7 +15,7 @@ const ORDER: Tier[] = ['free', 'basic', 'pro'];
  * bundler replaces NODE_ENV at build time.
  */
 export function TierPreview() {
-  const { tier, setTier, trial, startTrial } = useTier();
+  const { tier, setTier, trial, startTrial, billingEnforced } = useTier();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -41,10 +41,17 @@ export function TierPreview() {
               Tier preview (dev)
             </p>
           </div>
+          {billingEnforced && (
+            <p className="border-b border-line bg-pro-soft/40 px-3 py-2 text-[11px] leading-[15px] text-ink-2">
+              Entitlements are server-verified on this deployment — change plan from the Pro
+              screen instead of this switcher.
+            </p>
+          )}
           {ORDER.map((t) => (
             <button
               key={t}
               type="button"
+              disabled={billingEnforced}
               onClick={() => {
                 setTier(t);
                 setOpen(false);
@@ -52,6 +59,7 @@ export function TierPreview() {
               className={cn(
                 'flex w-full items-center justify-between px-3 py-2.5 text-left text-[13.5px]',
                 t === tier ? 'bg-blue-soft font-semibold text-navy' : 'text-ink hover:bg-canvas',
+                billingEnforced && 'cursor-not-allowed opacity-50',
               )}
             >
               <span>
@@ -64,16 +72,18 @@ export function TierPreview() {
             </button>
           ))}
           <div className="border-t border-line p-2">
-            <button
-              type="button"
-              onClick={() => {
-                startTrial();
-                setOpen(false);
-              }}
-              className="w-full rounded-md bg-pro px-2 py-1.5 text-[12.5px] font-bold text-[#3d3205]"
-            >
-              Start 14-day trial
-            </button>
+            {!billingEnforced && (
+              <button
+                type="button"
+                onClick={() => {
+                  startTrial();
+                  setOpen(false);
+                }}
+                className="w-full rounded-md bg-pro px-2 py-1.5 text-[12.5px] font-bold text-[#3d3205]"
+              >
+                Start 14-day trial
+              </button>
+            )}
           </div>
         </div>
       )}

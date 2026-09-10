@@ -75,7 +75,7 @@ function cellValue(feature: FeatureKey, tier: Tier): boolean | string {
 
 export function ProHubView() {
   const router = useRouter();
-  const { tier, trial, startTrial, endPro } = useTier();
+  const { tier, trial, startTrial, endPro, billingEnforced } = useTier();
   const { session } = useSavedTenders();
   const [yearly, setYearly] = useState(true);
 
@@ -132,7 +132,9 @@ export function ProHubView() {
                 </button>
               ) : (
                 <p className="text-[12.5px] leading-[1.45] text-ink-2">
-                  Billing management (invoices, payment method) connects in a later phase — your plan state is saved on this device for now.
+                  {billingEnforced
+                    ? 'Your subscription is verified on our servers — invoices and plan management are on the Pro plan screen.'
+                    : 'Billing management (invoices, payment method) connects in a later phase — your plan state is saved on this device for now.'}
                 </p>
               )}
             </div>

@@ -18,19 +18,25 @@ import { getServerTier } from '@/lib/tier-server';
  * the 404 status in this Next version (verified with probes in dev and
  * prod), while the same throw outside the group does.
  *
- * Provider order matters: TierProvider seeds from cookies server-side,
- * UpgradeProvider gives every screen the universal Pro gate, SavedProvider
- * uses both (its cap enforcement opens the upgrade sheet). Saved-searches,
+ * Provider order matters: TierProvider seeds from the server, which resolves
+ * the account's verified subscription when billing is configured (and falls
+ * back to the preview cookie otherwise), UpgradeProvider gives every screen
+ * the universal Pro gate, SavedProvider uses both (its cap enforcement opens
+ * the upgrade sheet). Saved-searches,
  * news-bookmarks and alert settings sit inside SavedProvider because their
  * account sync keys off the same session; AlertsProvider derives its real
  * deadline/trial events from those stores.
  */
 export async function AppShell({ children }: { children: React.ReactNode }) {
-  const { tier, trialEnd } = getServerTier();
+  const { tier, trialEnd, source } = await getServerTier();
 
   return (
     <DrawerProvider>
-      <TierProvider initialTier={tier} initialTrialEnd={trialEnd}>
+      <TierProvider
+        initialTier={tier}
+        initialTrialEnd={trialEnd}
+        billingEnforced={source === 'verified'}
+      >
         <UpgradeProvider>
           <SavedProvider>
             <SavedSearchesProvider>

@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unknown news category.' }, { status: 400 });
   }
 
-  const { tier } = getServerTier();
+  const { tier } = await getServerTier();
   const allowedCount = canReadRailCount(tier);
   const index = NEWS_RAIL_IDS.indexOf(rail);
   if (index >= allowedCount) {

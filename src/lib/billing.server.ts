@@ -3,20 +3,20 @@ import 'server-only';
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import { SUPABASE_URL, isSupabaseConfigured } from '@/lib/supabase-config';
+import { PRO_TRIAL_DAYS } from '@/types/tier';
 import {
   PLANS,
   buildCheckoutRequest,
   formatAmount,
-  itnSignature,
   nextPeriodEnd,
   parseItn,
   planById,
-  signaturesMatch,
   validateItn,
   type BillingPlan,
   type CheckoutRequest,
   type PaymentStatus,
 } from '@/lib/payfast';
+import type { SubscriptionStatus } from '@/lib/entitlement';
 
 /**
  * PayFast billing server module.
@@ -299,8 +299,9 @@ export async function processItn(rawBody: string): Promise<ItnOutcome> {
 
 export interface SubscriptionRow {
   plan: BillingPlan;
-  status: 'active' | 'cancelled' | 'expired';
+  status: SubscriptionStatus;
   currentPeriodEnd: string | null;
+  trialEndsAt: string | null;
   cancelAtPeriodEnd: boolean;
   payfastToken: string | null;
 }
@@ -314,7 +315,7 @@ export async function fetchSubscription(
 ): Promise<SubscriptionRow | null> {
   const { data, error } = await client
     .from('billing_subscriptions')
-    .select('plan, status, current_period_end, cancel_at_period_end, payfast_token')
+    .select('plan, status, current_period_end, trial_ends_at, cancel_at_period_end, payfast_token')
     .maybeSingle();
 
   if (error) {
@@ -329,9 +330,75 @@ export async function fetchSubscription(
     plan: plan.id,
     status: data.status,
     currentPeriodEnd: data.current_period_end ?? null,
+    trialEndsAt: data.trial_ends_at ?? null,
     cancelAtPeriodEnd: Boolean(data.cancel_at_period_end),
     payfastToken: data.payfast_token ?? null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Trials (server-side: the browser cannot grant itself Pro)
+// ---------------------------------------------------------------------------
+
+export type TrialOutcome =
+  | { ok: true; trialEnd: string }
+  | { ok: false; reason: 'storage_unconfigured' | 'already_used' | 'already_subscribed' | 'failed' };
+
+/** Starts the one-time Pro trial for an account. */
+export async function startTrial(userId: string): Promise<TrialOutcome> {
+  const supabase = serviceClient();
+  if (!supabase) return { ok: false, reason: 'storage_unconfigured' };
+
+  const { data: existing, error } = await supabase
+    .from('billing_subscriptions')
+    .select('status, trial_used_at, current_period_end')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) {
+    console.error('[billing] trial lookup failed:', error.message);
+    return { ok: false, reason: 'failed' };
+  }
+  if (existing?.status === 'active') return { ok: false, reason: 'already_subscribed' };
+  if (existing?.trial_used_at) return { ok: false, reason: 'already_used' };
+
+  const trialEnd = new Date(Date.now() + PRO_TRIAL_DAYS * 86_400_000).toISOString();
+  const { error: upsertError } = await supabase.from('billing_subscriptions').upsert(
+    {
+      user_id: userId,
+      // The plan the trial is trying: monthly Pro.
+      plan: PLANS['pro-monthly'].id,
+      status: 'trialing',
+      trial_ends_at: trialEnd,
+      trial_used_at: new Date().toISOString(),
+      current_period_end: trialEnd,
+      cancel_at_period_end: false,
+    },
+    { onConflict: 'user_id' },
+  );
+
+  if (upsertError) {
+    console.error('[billing] trial start failed:', upsertError.message);
+    return { ok: false, reason: 'failed' };
+  }
+  return { ok: true, trialEnd };
+}
+
+/** Ends a running trial early. The account drops to Basic immediately. */
+export async function endTrial(userId: string): Promise<{ ok: boolean; reason?: string }> {
+  const supabase = serviceClient();
+  if (!supabase) return { ok: false, reason: 'storage_unconfigured' };
+
+  const { error } = await supabase
+    .from('billing_subscriptions')
+    .update({ status: 'expired' })
+    .eq('user_id', userId)
+    .eq('status', 'trialing');
+
+  if (error) {
+    console.error('[billing] trial end failed:', error.message);
+    return { ok: false, reason: 'failed' };
+  }
+  return { ok: true };
 }
 
 /** Invoice rows for the plan screen (own rows only, newest first). */

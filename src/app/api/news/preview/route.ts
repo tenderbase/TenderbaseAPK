@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
   const url = sp.get('url') ?? '';
 
-  const { tier } = getServerTier();
+  const { tier } = await getServerTier();
   if (tier !== 'pro') {
     return NextResponse.json({ error: 'Custom feeds are a Pro feature.' }, { status: 403 });
   }
