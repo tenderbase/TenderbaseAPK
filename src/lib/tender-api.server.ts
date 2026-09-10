@@ -96,6 +96,12 @@ interface FetchOpts {
   /** ISR window in seconds. Tender data changes on a sync cadence, not per request. */
   revalidate?: number;
   signal?: AbortSignal;
+  /**
+   * Bypass Next's Data Cache entirely (`cache: 'no-store'`). Used to re-ask
+   * the upstream when a cached or mid-wake answer looks like a lie — an empty
+   * catalogue must be confirmed against the live service before it is shown.
+   */
+  noStore?: boolean;
 }
 
 /**
@@ -123,26 +129,63 @@ function describeError(status: number, body: unknown): TenderApiError {
   return new TenderApiError(status, 'UPSTREAM_ERROR', `Tender API returned ${status}`);
 }
 
-async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T> {
+// ---------------------------------------------------------------------------
+// One fetch, with one bounded retry for *fast* failures
+// ---------------------------------------------------------------------------
+
+/**
+ * Why a single retry exists: the upstream also lives on Render's free tier,
+ * and its cold-start signature is an immediate 502/503 from Render's router,
+ * a reset socket, or (worst) a 200 whose body is truncated HTML — all of which
+ * are usually gone a second later. A timeout is NOT retried: it has already
+ * burned the whole latency budget, and the page must hand over to the
+ * browser-direct fallback rather than hang for two timeouts.
+ */
+const RETRY_DELAY_MS = 1_200;
+const MAX_ATTEMPTS = 2;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type AttemptOutcome<T> =
+  | { kind: 'ok'; value: T }
+  | { kind: 'fail'; error: TenderApiError }
+  | { kind: 'retry'; why: string };
+
+async function attempt<T>(
+  baseUrl: string,
+  apiKey: string,
+  timeoutMs: number,
+  path: string,
+  opts: FetchOpts,
+): Promise<AttemptOutcome<T>> {
   const headers: Record<string, string> = { Accept: 'application/json' };
-  if (API_KEY) headers['X-API-Key'] = API_KEY;
+  if (apiKey) headers['X-API-Key'] = apiKey;
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, {
+    res = await fetch(`${baseUrl}${path}`, {
       headers,
-      next: { revalidate: opts.revalidate ?? 300 },
-      signal: opts.signal ?? AbortSignal.timeout(TIMEOUT_MS),
+      // The retry never touches the Data Cache; only a first attempt earns ISR.
+      ...(opts.noStore
+        ? { cache: 'no-store' as const }
+        : { next: { revalidate: opts.revalidate ?? 300 } }),
+      signal: opts.signal ?? AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {
     const aborted = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
-    throw new TenderApiError(
-      504,
-      aborted ? 'UPSTREAM_TIMEOUT' : 'NETWORK_ERROR',
-      aborted
-        ? 'The tender service did not respond in time (it may be cold-starting).'
-        : 'Could not reach the tender service.',
-    );
+    if (aborted) {
+      return {
+        kind: 'fail',
+        error: new TenderApiError(
+          504,
+          'UPSTREAM_TIMEOUT',
+          'The tender service did not respond in time (it may be cold-starting).',
+        ),
+      };
+    }
+    return { kind: 'retry', why: 'connection failed' };
   }
 
   if (!res.ok) {
@@ -152,45 +195,110 @@ async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T> {
     } catch {
       body = undefined; // non-JSON error body
     }
-    throw describeError(res.status, body);
+    const error = describeError(res.status, body);
+    // 5xx and 429 are "not really answered" (cold start, rate limit): worth one
+    // more try. A 4xx is an answer — validation, missing route — retrying it
+    // would just double the latency before the same failure.
+    if (res.status >= 500 || res.status === 429) return { kind: 'retry', why: `HTTP ${res.status}` };
+    return { kind: 'fail', error };
   }
 
-  return res.json() as Promise<T>;
+  try {
+    return { kind: 'ok', value: (await res.json()) as T };
+  } catch {
+    // A 200 that is not JSON is the mid-wake upstream serving an HTML error
+    // page with a success status — treated as a transient failure.
+    return { kind: 'retry', why: 'malformed response body' };
+  }
 }
 
-export const tenderApiServer = {
-  /**
-   * `GET /tenders` — the only list endpoint. There is no `/tenders/search`,
-   * `/tenders/latest` or `/tenders/closing-soon` on this service; full-text
-   * search is the `q` param and "closing soon" is `closingAfter` + `sort=closing`.
-   */
-  list(query: ApiTenderQuery = {}, opts?: FetchOpts) {
-    const limit = Math.min(query.limit ?? 20, MAX_LIMIT);
-    return apiFetch<ApiTenderListResponse>(`/tenders${buildQuery({ ...query, limit })}`, opts);
-  },
+async function apiFetch<T>(
+  baseUrl: string,
+  apiKey: string,
+  timeoutMs: number,
+  retryDelayMs: number,
+  path: string,
+  opts: FetchOpts = {},
+): Promise<T> {
+  let lastWhy = '';
+  for (let attemptNo = 1; attemptNo <= MAX_ATTEMPTS; attemptNo++) {
+    if (attemptNo > 1) await delay(retryDelayMs);
+    const outcome = await attempt<T>(baseUrl, apiKey, timeoutMs, path, {
+      ...opts,
+      noStore: opts.noStore || attemptNo > 1,
+    });
+    if (outcome.kind === 'ok') return outcome.value;
+    if (outcome.kind === 'fail') throw outcome.error;
+    lastWhy = outcome.why;
+  }
+  // Retried and still not answered: keep the network-failure vocabulary the
+  // fallback copy keys off (NETWORK_ERROR vs UPSTREAM_ERROR).
+  if (lastWhy === 'connection failed') {
+    throw new TenderApiError(504, 'NETWORK_ERROR', 'Could not reach the tender service.');
+  }
+  throw new TenderApiError(502, 'UPSTREAM_ERROR', `The tender service kept failing (${lastWhy}).`);
+}
 
-  /** `GET /tenders/:id` — note the `{ tender }` envelope, not a bare object. */
-  getById(id: string, opts?: FetchOpts) {
-    return apiFetch<ApiTenderDetailResponse>(`/tenders/${encodeURIComponent(id)}`, opts);
-  },
+export interface TenderApiOptions {
+  /** Per-attempt timeout. Defaults to `TENDERBASE_API_TIMEOUT_MS` / 20s. */
+  timeoutMs?: number;
+  /** Sent as `X-API-Key` when non-empty. Defaults to `TENDERBASE_API_KEY`. */
+  apiKey?: string;
+  /** Backoff between attempts; tests shrink it so retries stay fast. */
+  retryDelayMs?: number;
+}
 
-  /** `GET /categories` — `{ category, count }[]`, 62 entries, count-descending. */
-  categories(opts?: FetchOpts) {
-    return apiFetch<ApiCategoriesResponse>('/categories', { revalidate: 86_400, ...opts });
-  },
+/**
+ * Builds a client bound to one base URL. `tenderApiServer` is the production
+ * binding; tests spin up loopback servers and bind their own, which is how the
+ * retry and timeout behaviour is exercised against real sockets.
+ */
+export function tenderApiServerFrom(rawBaseUrl: string, options: TenderApiOptions = {}) {
+  const baseUrl = rawBaseUrl.replace(/\/$/, '');
+  const timeoutMs = options.timeoutMs ?? (Number.isFinite(TIMEOUT_MS) && TIMEOUT_MS > 0 ? TIMEOUT_MS : 20_000);
+  const apiKey = options.apiKey ?? API_KEY;
+  const retryDelayMs = options.retryDelayMs ?? RETRY_DELAY_MS;
 
-  /** `GET /provinces` — `{ province, count }[]`, 10 entries. */
-  provinces(opts?: FetchOpts) {
-    return apiFetch<ApiProvincesResponse>('/provinces', { revalidate: 86_400, ...opts });
-  },
+  const fetchJson = <T>(path: string, opts?: FetchOpts) =>
+    apiFetch<T>(baseUrl, apiKey, timeoutMs, retryDelayMs, path, opts);
 
-  /** `GET /stats` — pipeline health and dataset counts. */
-  stats(opts?: FetchOpts) {
-    return apiFetch<ApiStatsResponse>('/stats', { revalidate: 300, ...opts });
-  },
+  return {
+    /**
+     * `GET /tenders` — the only list endpoint. There is no `/tenders/search`,
+     * `/tenders/latest` or `/tenders/closing-soon` on this service; full-text
+     * search is the `q` param and "closing soon" is `closingAfter` + `sort=closing`.
+     */
+    list(query: ApiTenderQuery = {}, opts?: FetchOpts) {
+      const limit = Math.min(query.limit ?? 20, MAX_LIMIT);
+      return fetchJson<ApiTenderListResponse>(`/tenders${buildQuery({ ...query, limit })}`, opts);
+    },
 
-  /** `GET /health` — liveness probe. Shape is not documented, so it is opaque. */
-  health(opts?: FetchOpts) {
-    return apiFetch<Record<string, unknown>>('/health', { revalidate: 0, ...opts });
-  },
-};
+    /** `GET /tenders/:id` — note the `{ tender }` envelope, not a bare object. */
+    getById(id: string, opts?: FetchOpts) {
+      return fetchJson<ApiTenderDetailResponse>(`/tenders/${encodeURIComponent(id)}`, opts);
+    },
+
+    /** `GET /categories` — `{ category, count }[]`, 62 entries, count-descending. */
+    categories(opts?: FetchOpts) {
+      return fetchJson<ApiCategoriesResponse>('/categories', { revalidate: 86_400, ...opts });
+    },
+
+    /** `GET /provinces` — `{ province, count }[]`, 10 entries. */
+    provinces(opts?: FetchOpts) {
+      return fetchJson<ApiProvincesResponse>('/provinces', { revalidate: 86_400, ...opts });
+    },
+
+    /** `GET /stats` — pipeline health and dataset counts. */
+    stats(opts?: FetchOpts) {
+      return fetchJson<ApiStatsResponse>('/stats', { revalidate: 300, ...opts });
+    },
+
+    /** `GET /health` — liveness probe. Shape is not documented, so it is opaque. */
+    health(opts?: FetchOpts) {
+      return fetchJson<Record<string, unknown>>('/health', { revalidate: 0, ...opts });
+    },
+  };
+}
+
+/** The production client, bound to `API_BASE_URL`. */
+export const tenderApiServer = tenderApiServerFrom(API_BASE_URL);

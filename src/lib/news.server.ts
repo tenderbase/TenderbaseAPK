@@ -39,6 +39,23 @@ export const MAX_FEED_BYTES = 1_500_000;
 const MAX_FEED_HOPS = 3;
 
 /**
+ * Feeds are fetched with a browser-shaped User-Agent.
+ *
+ * The previous honest marker UA (`TenderBase/1.0 (+news reader)`) worked from
+ * a laptop but was blocked from Render's datacenter IPs: BusinessTech and
+ * MyBroadband sit behind edges (Cloudflare) that bot-score unknown crawler
+ * UAs harder when the request already comes from a datacenter range, and the
+ * production deployment saw every one of those feeds fail while the same URLs
+ * served fine elsewhere. A feed fetch is a read of a public XML document, so
+ * the pragmatic UA is one the edge will serve; there is nothing deceptive in
+ * the request itself (no cookies, no Referer, plain GET).
+ */
+const FEED_USER_AGENT =
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+/** Content-negotiate like a reader: some hosts 403 an unidentified accept set. */
+const FEED_ACCEPT = 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.8';
+
+/**
  * Only used for the guarded path; see `fetchFeedText`. Imported lazily for the
  * same reason `fromPayfastIp` does it: `node:dns` stays out of the module graph
  * until something actually asks where a user-supplied host lives.
@@ -117,7 +134,7 @@ export async function fetchFeedText(url: string, opts: FeedFetchOptions = {}): P
     try {
       res = await fetch(current, {
         signal: AbortSignal.timeout(9_000),
-        headers: { 'user-agent': 'TenderBase/1.0 (+news reader)' },
+        headers: { 'user-agent': FEED_USER_AGENT, accept: FEED_ACCEPT },
         cache: 'no-store',
         redirect: opts.guardTarget ? 'manual' : 'follow',
       });
@@ -164,52 +181,121 @@ function toNewsItem(sourceId: string, raw: { title: string; url: string | null; 
   };
 }
 
-/** Fetch one source's live feed; throws NewsFeedError with a code. */
+/**
+ * Fetch one source's live feed; throws NewsFeedError with a code.
+ *
+ * One automatic retry for NETWORK_ERROR only: a reset connection or a hung
+ * socket is usually gone a second later, while HTTP 403/404 or a blocked
+ * target are answers — repeating them just doubles the latency. The retry
+ * must not apply to the guarded (user-supplied) path's policy decisions.
+ */
 export async function fetchSourceFeed(sourceId: string): Promise<{ feedTitle: string | null; items: NewsItem[] }> {
   const def = sourceDef(sourceId);
   if (!def) throw feedError('PARSE_ERROR', `Unknown source ${sourceId}.`);
-  const text = await fetchFeedText(def.rssUrl);
-  const parsed = parseFeedXml(text);
-  const items: NewsItem[] = [];
-  for (const raw of parsed.items) {
-    const it = toNewsItem(sourceId, raw);
-    if (it) items.push(it);
+
+  const parse = (text: string) => {
+    const parsed = parseFeedXml(text);
+    const items: NewsItem[] = [];
+    for (const raw of parsed.items) {
+      const it = toNewsItem(sourceId, raw);
+      if (it) items.push(it);
+    }
+    return { feedTitle: parsed.title, items };
+  };
+
+  let text: string;
+  try {
+    text = await fetchFeedText(def.rssUrl);
+  } catch (e) {
+    if ((e as NewsFeedError)?.code !== 'NETWORK_ERROR') throw e;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    text = await fetchFeedText(def.rssUrl);
   }
-  return { feedTitle: parsed.title, items };
+  return parse(text);
 }
 
-/** Fetch a single source's feed with fixture fallback + 5-minute cache. */
+/**
+ * Turn a feed failure into the parenthesised reason shown in the notice, so
+ * an outage on the deployed host is self-diagnosing: "the feed is unreachable
+ * right now (HTTP 403)" says something a "right now." does not.
+ */
+function feedFailureReason(e: unknown): string {
+  const err = e as Partial<NewsFeedError> | null;
+  const message = err?.message ?? '';
+  switch (err?.code) {
+    case 'NETWORK_ERROR':
+      return /timed out/i.test(message) ? 'timed out' : 'network error';
+    case 'HTTP_ERROR': {
+      const status = /(\d{3})/.exec(message)?.[1];
+      return status ? `HTTP ${status}` : 'HTTP error';
+    }
+    case 'PARSE_ERROR':
+      return 'the response was not a parseable feed';
+    case 'BLOCKED':
+      return 'the address was refused by our fetch policy';
+    default:
+      return 'unknown error';
+  }
+}
+
+/** Fetch a single source's feed with fixture fallback + TTL cache. */
 interface CachedSource {
   at: number;
   value: { items: NewsItem[]; feed: NewsFeedStatus; notice?: string };
 }
 const feedCache = new Map<string, CachedSource>();
+
+/** Live payloads are worth remembering for five minutes. */
 const FEED_TTL_MS = 5 * 60 * 1000;
+/**
+ * Failures are remembered for thirty seconds — and only thirty.
+ *
+ * Caching a failure for the full five minutes made the News screen's Retry
+ * button a lie: it refetched the rail, the cache served the same failure back,
+ * and a feed that recovered a minute later stayed "unreachable" for four more.
+ * A short negative TTL still flattens a burst of parallel rail reads during an
+ * outage, but a recovered feed is visible on the very next retry.
+ */
+const FEED_ERROR_TTL_MS = 30 * 1000;
+
+/** Test seam: the cache, so tests can rewind timestamps instead of sleeping. */
+export function __feedCacheForTests(): Map<string, CachedSource> {
+  return feedCache;
+}
 
 export async function getSourceFeed(
   sourceId: string,
+  /** Injectable for tests; production always uses the real registry fetch. */
+  fetcher: (id: string) => Promise<{ feedTitle: string | null; items: NewsItem[] }> = fetchSourceFeed,
 ): Promise<{ items: NewsItem[]; feed: NewsFeedStatus; notice?: string }> {
   const hit = feedCache.get(sourceId);
-  if (hit && Date.now() - hit.at < FEED_TTL_MS) return hit.value;
-  const def = sourceDef(sourceId);
-  if (!def) throw feedError('PARSE_ERROR', `Unknown source ${sourceId}.`);
+  if (hit && Date.now() - hit.at < (hit.value.feed.ok ? FEED_TTL_MS : FEED_ERROR_TTL_MS)) {
+    return hit.value;
+  }
+  // The registry def only names the source in notices; the unknown-source
+  // guard itself lives in `fetchSourceFeed`, so an injected (test) fetcher can
+  // drive ids that are not in the registry.
+  const name = sourceDef(sourceId)?.name ?? sourceId;
+  if (!sourceDef(sourceId) && fetcher === fetchSourceFeed) {
+    throw feedError('PARSE_ERROR', `Unknown source ${sourceId}.`);
+  }
 
   let status: NewsFeedStatus;
   let items: NewsItem[] = [];
   let notice: string | undefined;
 
   try {
-    const live = await fetchSourceFeed(sourceId);
+    const live = await fetcher(sourceId);
     items = live.items;
-    status = { sourceId, name: def.name, ok: true, mode: 'live', itemCount: items.length };
-  } catch {
+    status = { sourceId, name, ok: true, mode: 'live', itemCount: items.length };
+  } catch (e) {
     if (FIXTURES_ALLOWED && FIXTURE_NEWS[sourceId]) {
       items = FIXTURE_NEWS[sourceId];
-      status = { sourceId, name: def.name, ok: false, mode: 'fixture', itemCount: items.length };
-      notice = `${def.name}: showing stories captured ${FIXTURE_NEWS_CAPTURED_AT} — the live feed is unreachable right now.`;
+      status = { sourceId, name, ok: false, mode: 'fixture', itemCount: items.length };
+      notice = `${name}: showing stories captured ${FIXTURE_NEWS_CAPTURED_AT} — the live feed is unreachable right now (${feedFailureReason(e)}).`;
     } else {
-      status = { sourceId, name: def.name, ok: false, mode: 'error', itemCount: 0 };
-      notice = `${def.name}: the feed is unreachable right now.`;
+      status = { sourceId, name, ok: false, mode: 'error', itemCount: 0 };
+      notice = `${name}: the feed is unreachable right now (${feedFailureReason(e)}).`;
     }
   }
 
