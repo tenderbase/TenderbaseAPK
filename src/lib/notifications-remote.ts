@@ -16,13 +16,13 @@ interface DbNotification {
   metadata: Record<string, unknown> | null;
 }
 
-function toEntry(row: DbNotification): AlertEntry {
+export function notificationToEntry(row: DbNotification): AlertEntry {
   return {
     id: row.id,
     kind: row.kind,
+    tenderId: row.tender_id,
     title: row.title,
     body: row.body,
-    tenderId: row.tender_id,
     createdAt: row.created_at,
     read: row.read_at !== null,
     ...(typeof row.score === 'number' ? { score: row.score } : {}),
@@ -44,7 +44,7 @@ export async function fetchNotifications(limit = 100): Promise<AlertEntry[] | un
     console.error('[notifications] fetch failed:', error.message);
     return undefined;
   }
-  return (data as DbNotification[]).map(toEntry);
+  return (data as DbNotification[]).map(notificationToEntry);
 }
 
 export async function persistNotifications(entries: AlertEntry[]): Promise<boolean> {
