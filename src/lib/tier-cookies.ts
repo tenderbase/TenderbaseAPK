@@ -2,6 +2,22 @@
 export const TIER_COOKIE = 'tb_tier';
 export const TRIAL_END_COOKIE = 'tb_trial_end';
 
+/**
+ * May the cookie tier be trusted at all?
+ *
+ * Only where there is no account store to consult (credentials absent), or in
+ * a dev preview that explicitly bypasses auth. On a configured deployment the
+ * cookie is a browser-supplied claim: honouring it would let anyone open
+ * devtools, set `tb_tier=pro` and unlock Pro — paid entitlement granted by the
+ * client, which is exactly what the billing work exists to prevent.
+ */
+export function previewGrantAllowed(input: {
+  supabaseConfigured: boolean;
+  authBypassed: boolean;
+}): boolean {
+  return !input.supabaseConfigured || input.authBypassed;
+}
+
 /** Cookie lifetime: a year, matching how long a preview grant may last. */
 const YEAR_SECONDS = 60 * 60 * 24 * 365;
 

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { REASON_COPY, entitlementFromSubscription } from '@/lib/entitlement';
+import { previewGrantAllowed } from '@/lib/tier-cookies';
 
 const NOW = new Date('2026-09-09T12:00:00.000Z');
 const FUTURE = '2026-09-20T12:00:00.000Z';
@@ -103,4 +104,20 @@ test('every reason has user-facing copy', () => {
   for (const r of reasons) {
     assert.ok(REASON_COPY[r] && REASON_COPY[r].length > 0, `missing copy for ${r}`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// U8-E: where the cookie tier may be trusted at all
+// ---------------------------------------------------------------------------
+
+test('a configured deployment never takes the browser at its word', () => {
+  assert.equal(previewGrantAllowed({ supabaseConfigured: true, authBypassed: false }), false);
+});
+
+test('the cookie tier is the mechanism only where there is no account store', () => {
+  assert.equal(previewGrantAllowed({ supabaseConfigured: false, authBypassed: false }), true);
+});
+
+test('a dev auth bypass may still preview with real credentials configured', () => {
+  assert.equal(previewGrantAllowed({ supabaseConfigured: true, authBypassed: true }), true);
 });

@@ -1,11 +1,12 @@
 import 'server-only';
 
 import { cookies } from 'next/headers';
-import { TIER_COOKIE, TRIAL_END_COOKIE } from '@/lib/tier-cookies';
+import { TIER_COOKIE, TRIAL_END_COOKIE, previewGrantAllowed } from '@/lib/tier-cookies';
 import { entitlementFromSubscription, type SubscriptionSnapshot } from '@/lib/entitlement';
 import { fetchSubscription } from '@/lib/billing.server';
 import { getUser } from '@/lib/supabase-server';
 import { createClient } from '@/lib/supabase-server';
+import { isAuthBypassed, isSupabaseConfigured } from '@/lib/supabase-config';
 import type { Tier } from '@/types/tier';
 
 const VALID: Tier[] = ['free', 'basic', 'pro'];
@@ -19,13 +20,16 @@ export interface ServerTier {
   trialEnd: string | null;
   /**
    * 'verified' — the tier came from this account's billing row.
-   * 'cookie'   — Supabase is unconfigured (sandbox/dev preview) or nobody is
-   *              signed in, so the cookie remains the source of truth.
+   * 'guest'    — configured deployment, nobody signed in: free, and the
+   *              browser gets no say. Entitlement actions route to sign-in.
+   * 'cookie'   — no account store exists (preview deployment) or a dev auth
+   *              bypass is on, so the cookie is the whole mechanism.
    *
-   * The client uses this to decide whether entitlement actions are real
-   * (server-verified billing) or preview-only (dev tier switcher).
+   * Anything other than 'cookie' means the browser cannot grant itself a
+   * tier, which is what the client store checks before letting a control
+   * write one.
    */
-  source: 'verified' | 'cookie';
+  source: 'verified' | 'guest' | 'cookie';
 }
 
 /**
@@ -35,9 +39,14 @@ export interface ServerTier {
  * subscription decides (see entitlement.ts) — the cookie is ignored, so a
  * cleared or hand-edited cookie can never grant Pro.
  *
- * Otherwise (sandbox preview, signed-out browsing, or a missing migration)
- * it falls back to the cookie the client store writes, which is how the
- * whole app is previewed without credentials.
+ * With Supabase configured and nobody signed in the answer is 'guest': free.
+ * The cookie is only consulted where there is no account store at all (or a
+ * dev bypass says so) — otherwise `tb_tier=pro` typed into devtools would
+ * unlock paid features, which is precisely the hole billing exists to close.
+ *
+ * A failed lookup on a configured deployment also fails closed to 'guest'.
+ * Browsing is unaffected (the catalogue is free by design); only entitlements
+ * are withheld until we can prove otherwise.
  */
 export async function getServerTier(): Promise<ServerTier> {
   try {
@@ -57,8 +66,12 @@ export async function getServerTier(): Promise<ServerTier> {
       return { tier: ent.tier, trialEnd: ent.trialEnd, source: 'verified' };
     }
   } catch {
-    // Unconfigured or unreachable auth — fall through to the cookie so the
-    // app keeps working rather than silently downgrading everyone.
+    // Unreachable auth on a preview deployment falls through to the cookie;
+    // a configured one fails closed to 'guest' just below.
+  }
+
+  if (!previewGrantAllowed({ supabaseConfigured: isSupabaseConfigured, authBypassed: isAuthBypassed })) {
+    return { tier: 'free', trialEnd: null, source: 'guest' };
   }
 
   const store = cookies();

@@ -100,6 +100,11 @@ Things worth knowing:
 directly. When the service is unreachable the app falls back to real captured
 payloads and **says so** via `DataSourceNotice` — never presented as live.
 
+Pro entitlement is a server fact, not a client preference: it is derived from
+the account's `billing_subscriptions` row (or an unexpired trial on it) and the
+browser cannot grant it. PayFast checkout, trials, cancellation and the
+first-run plan choice are documented in `BILLING-ONBOARDING.md`.
+
 ---
 
 ## Responsive strategy

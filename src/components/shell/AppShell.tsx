@@ -35,7 +35,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       <TierProvider
         initialTier={tier}
         initialTrialEnd={trialEnd}
-        billingEnforced={source === 'verified'}
+        billingEnforced={source !== 'cookie'}
       >
         <UpgradeProvider>
           <SavedProvider>

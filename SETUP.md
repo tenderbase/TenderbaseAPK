@@ -214,3 +214,21 @@ npx cap open android      # requires Android Studio
 Static export cannot use dynamic server routes, so `/tenders/[id]` needs
 `generateStaticParams()` or client-side fetching first. Safe-area insets and
 `maximumScale: 1` (no zoom-jitter on input focus) are already configured.
+
+---
+
+## 10. Billing & onboarding (Pro)
+
+Pro is sold through PayFast and verified server-side; the first-run Basic/Pro
+decision lives at `/welcome`. **Nothing needs to be configured for the app to
+run** — with no billing credentials every payment surface reports an honest
+"not configured" state rather than failing or faking success.
+
+To turn billing on:
+
+1. Run the migrations listed in `BILLING-ONBOARDING.md` §2.1 (Supabase → SQL
+   Editor; `0006`–`0008` are the billing/onboarding ones).
+2. Fill in the PayFast and service-role variables in `.env.local`
+   (`.env.example` documents each one; the passphrase is required, not optional).
+3. Read `BILLING-ONBOARDING.md` for the sandbox test drive, the invariants a
+   reviewer can check, and what is deliberately out of scope.
