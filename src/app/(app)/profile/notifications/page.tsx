@@ -13,13 +13,10 @@ import { cn } from '@/lib/cn';
 import type { AlertKind } from '@/lib/alerts';
 
 /**
- * Notification settings (§5.9 + §6).
- *
- * In-app toggles are REAL — they mute/unmute the alert types the inbox and
- * the nav bubble actually use. Push and email ship with the notifications
- * release: this screen shows the exact permission copy we will use, the
- * channel design (§6 matrix) and the Pro quiet-hours/digest promise, so
- * nothing about them is a surprise — and nothing dead pretends to work.
+ * Notification settings. In-app notifications are persisted to the account
+ * and delivered in real time through Supabase Realtime. Push/email remain
+ * opt-in delivery channels and only activate when their provider credentials
+ * are configured on the notification worker.
  */
 export default function NotificationsPage() {
   const alerts = useAlerts();
@@ -29,13 +26,13 @@ export default function NotificationsPage() {
   const inAppKinds: { kind: AlertKind; icon: typeof Sparkles; title: string; sub: string }[] = [
     { kind: 'match', icon: Sparkles, title: 'New matches', sub: 'When a tender scores 65%+ for your business for the first time.' },
     { kind: 'closing', icon: BellRing, title: 'Deadline alerts', sub: 'Saved tenders entering their final 7 days — and their closing day.' },
-    { kind: 'system', icon: ShieldCheck, title: 'System notices', sub: 'Trial expiry and account events.' },
+    { kind: 'system', icon: ShieldCheck, title: 'System notices', sub: 'Account and service events.' },
   ];
 
   const futureEvents = [
     { icon: Sparkles, title: 'New tender matches profile', now: 'In-app · instant', later: pro ? 'Push · Pro instant' : 'Push · Pro' },
     { icon: BellRing, title: 'Saved tender closing ≤ 7/3/1 day', now: 'In-app · instant', later: 'Push · Basic and up' },
-    { icon: FileText, title: 'Addendum / document update', now: 'In-app (release)', later: 'Push · Pro' },
+    { icon: FileText, title: 'Addendum / document update', now: 'In-app · ready', later: 'Push · Pro' },
     { icon: Newspaper, title: 'Daily News Brief', now: '—', later: 'Push & email · Pro' },
     { icon: Mail, title: 'Weekly digest', now: '—', later: 'Email · Basic' },
   ] as const;
@@ -52,14 +49,13 @@ export default function NotificationsPage() {
         <div className="flex items-start gap-2.5 rounded-[12px] border border-line bg-canvas px-3.5 py-3">
           <Bell size={16} strokeWidth={2} className="mt-0.5 shrink-0 text-ink-2" aria-hidden />
           <p className="text-[12.5px] leading-[18px] text-ink-2">
-            In-app alerts are live today. Push and email arrive with the notifications release —
-            the choices below already control what you&apos;ll get.
+            In-app notifications are live, persistent, and synced in real time. Push and email are
+            the next delivery channels and will only activate when configured safely.
           </p>
         </div>
       </header>
 
       <div className="px-5 pt-4">
-        {/* In-app — real toggles bound to the alerts store */}
         <section>
           <h2 className="mb-2 px-0.5 text-micro font-semibold uppercase tracking-[0.07em] text-ink-3">
             In-app alerts
@@ -82,11 +78,11 @@ export default function NotificationsPage() {
             })}
           </ul>
           <p className="mt-1.5 px-1 text-[11px] leading-[15px] text-ink-3">
-            Toggles apply instantly to the Alerts tab and its badge, and sync to your account.
+            Toggles apply instantly to the Alerts tab and its badge, sync to your account, and now
+            survive sign-in on another device.
           </p>
         </section>
 
-        {/* Push + email — honest future rows, permission-flow copy ready */}
         <section className="mt-6">
           <h2 className="mb-2 px-0.5 text-micro font-semibold uppercase tracking-[0.07em] text-ink-3">
             Push &amp; email
@@ -106,30 +102,28 @@ export default function NotificationsPage() {
                 </p>
                 <span className="mt-2 inline-flex items-center gap-1 rounded-md border border-line bg-canvas px-2 py-1 text-[10.5px] font-bold uppercase tracking-[0.05em] text-ink-3">
                   <Timer size={11} strokeWidth={2.2} aria-hidden />
-                  Arrives with the notifications release
+                  Provider configuration required
                 </span>
               </div>
             </div>
 
-            {/* The exact pre-prompt copy — value first, asked once, never nagged */}
             <div className="mt-3 rounded-[12px] bg-canvas px-3.5 py-3">
               <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-ink-3">
-                When we ask, this is the copy
+                Permission copy
               </p>
               <p className="mt-1.5 text-[13.5px] leading-[19px] text-ink">
                 &ldquo;Get instant push when a tender matches your business, or a saved deadline
                 nears.&rdquo;
               </p>
               <p className="mt-1.5 text-[11.5px] leading-[16px] text-ink-3">
-                We ask once, when push becomes available — never nag after you decline. You can
-                change the choice here any time, and quiet hours (&ldquo;digest instead&rdquo;) are a
-                Pro option we will honour per channel.
+                The permission prompt will be shown once, after the value is clear. Declining will
+                not trigger repeated prompts.
               </p>
             </div>
           </div>
 
           <p className="mt-3 px-0.5 text-[12px] text-ink-2">
-            Channel design — what you&apos;ll get and where:
+            Delivery matrix:
           </p>
           <ul className="divide-y divide-line rounded-[14px] border border-line bg-white px-3.5">
             {futureEvents.map((e) => {
