@@ -14,7 +14,7 @@ import type { NewsFeedStatus, NewsItem, NewsRailEnvelope, NewsRailId } from '@/t
  *     a feed is unreachable, labelled with the capture date.
  *   - Production: a feed outage is a red error envelope — fixtures can
  *     never render there.
- *   - A tiny TTL cache keeps a rail read from burning 5 fetches per request.
+ *   - A tiny TTL cache keeps a rail read from burning a fetch per source per request.
  *
  * Anything a *user* types as a feed URL is additionally put through
  * `lib/feed-target.ts` before we connect: our server must not be turned into a
@@ -42,13 +42,15 @@ const MAX_FEED_HOPS = 3;
  * Feeds are fetched with a browser-shaped User-Agent.
  *
  * The previous honest marker UA (`TenderBase/1.0 (+news reader)`) worked from
- * a laptop but was blocked from Render's datacenter IPs: BusinessTech and
- * MyBroadband sit behind edges (Cloudflare) that bot-score unknown crawler
- * UAs harder when the request already comes from a datacenter range, and the
- * production deployment saw every one of those feeds fail while the same URLs
- * served fine elsewhere. A feed fetch is a read of a public XML document, so
- * the pragmatic UA is one the edge will serve; there is nothing deceptive in
- * the request itself (no cookies, no Referer, plain GET).
+ * a laptop but was blocked from Render's datacenter IPs: Cloudflare-fronted
+ * feeds bot-score unknown crawler UAs harder when the request already comes
+ * from a datacenter range, and the production deployment saw those feeds
+ * fail while the same URLs served fine elsewhere. (One former registry
+ * source went further and 403'd the datacenter range for every UA; it was
+ * dropped from the registry — see news-sources.ts.) A feed fetch is a read
+ * of a public XML document, so the pragmatic UA is one the edge will serve;
+ * there is nothing deceptive in the request itself (no cookies, no Referer,
+ * plain GET).
  */
 const FEED_USER_AGENT =
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -189,7 +191,8 @@ function toNewsItem(sourceId: string, raw: { title: string; url: string | null; 
  *      connection is usually gone a second later, and the retry must not
  *      apply to policy answers like 403).
  *   2. If the direct answer looks like an *egress* failure — HTTP error
- *      (BusinessTech's edge 403s Render's IP range regardless of User-Agent)
+ *      (observed in production: an edge answering HTTP 403 to our datacenter
+ *      range regardless of User-Agent)
  *      or a network failure — the same feed URL is fetched once through a
  *      relay (`FEED_RELAY_URL`), which reads the public XML from an IP the
  *      source has no reason to bot-score. Relay only ever applies to the
@@ -256,15 +259,18 @@ export async function fetchSourceFeed(sourceId: string): Promise<{ feedTitle: st
 
 /**
  * Where relayed feed fetches go. `{url}` is replaced with the feed URL,
- * percent-encoded. The default relay (`api.allorigins.win`) is a free,
- * keyless public URL reader — appropriate here because the payload is a
- * public RSS document, no credentials or user data are sent, and only
- * repo-controlled feed addresses ever use this path. Override with
- * `NEWS_FEED_RELAY_URL` (or point it at your own tiny proxy for full control);
- * set it to `none` to disable relaying outright.
+ * percent-encoded. Relaying is OFF unless the operator configures it: every
+ * free keyless public relay checked on 2026-09-10 was unusable (two answered
+ * Cloudflare 522 timeouts when probed, one now requires an API key, one
+ * rate-limits shared egress IPs — and production had already shown the old
+ * default failing open on a 403'd feed). A dead default relay only adds its
+ * own timeout to every failing feed before failing. Set
+ * `NEWS_FEED_RELAY_URL` to your own tiny proxy for full control; only
+ * repo-controlled feed addresses ever use this path (the payload is a public
+ * RSS document — no credentials or user data are sent), and user-supplied
+ * feed previews are never relayed.
  */
-export const FEED_RELAY_TEMPLATE =
-  (process.env.NEWS_FEED_RELAY_URL ?? 'https://api.allorigins.win/raw?url={url}').trim();
+export const FEED_RELAY_TEMPLATE = (process.env.NEWS_FEED_RELAY_URL ?? '').trim();
 
 /** The relay URL for a feed, or null when relaying is disabled/misconfigured. */
 export function relayFeedUrl(target: string, template: string = FEED_RELAY_TEMPLATE): string | null {

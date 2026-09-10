@@ -39,7 +39,7 @@ test('a successful feed is served from cache on the immediate next read', async 
 });
 
 test('a failed feed is NOT sticky — it is refetched after the short error TTL', async (t) => {
-  const sourceId = 'businesstech-cachetest';
+  const sourceId = 'citizenbusiness-cachetest';
   let calls = 0;
   const fetcher = async () => {
     calls += 1;
@@ -64,7 +64,7 @@ test('a failed feed is NOT sticky — it is refetched after the short error TTL'
 
   await getSourceFeed(sourceId, fetcher);
   assert.equal(calls, 2, 'a 30s-old failure is re-fetched — Retry can mean it');
-  assert.equal(FIXTURE_NEWS['businesstech'].length > 0, true, 'registry sources do carry fixtures (fixture branch stays distinct)');
+  assert.equal(FIXTURE_NEWS['sanews'].length > 0, true, 'registry sources do carry fixtures (fixture branch stays distinct)');
 });
 
 test('the error notice carries the failure reason for each error class', async () => {

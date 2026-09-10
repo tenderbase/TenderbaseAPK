@@ -4,18 +4,28 @@ import type { NewsRailDef, NewsRailId, NewsSourceDef } from '@/types/news';
 /**
  * The curated SA source registry (blueprint §5.7: SAnews, Treasury/SARS,
  * eTenders bulletins, industry press) — narrowed to feeds that exist and
- * were reachable at capture time (2026-09-09):
+ * were reachable at capture time (2026-09-10):
  *
- *   Government     → SAnews.gov.za            (state news agency)
- *   Business       → BusinessTech             (industry press)
- *   Construction   → Infrastructure News      (industry press)
- *   Technology     → MyBroadband              (industry press)
- *   Finance        → Moneyweb                 (industry press)
+ *   Business       → The Citizen, business desk (national daily)
+ *   Government     → SAnews.gov.za              (state news agency)
+ *                    + Polity.org.za            (policy & legislation press)
+ *   Construction   → Engineering News           (industry press)
+ *                    + CCE Online News          (construction press)
+ *   Technology     → MyBroadband                (industry press)
+ *                    + TechCentral              (industry press)
+ *   Finance        → Moneyweb                   (industry press)
+ *   SARS & Tax     → Moonstone                  (compliance & regulation press)
+ *
+ * Two former sources were dropped on 2026-09-10 after production proved
+ * them unreachable from the deployed host: BusinessTech (its edge answers
+ * our datacenter range with HTTP 403 regardless of User-Agent) and
+ * Infrastructure News (every fetch from Render times out). A
+ * deterministically failing source is worse than no source: it holds every
+ * read of its rail open for the full timeout budget while contributing
+ * nothing, so the registry only lists feeds that serve the deployed host.
  *
  * Rail order defines entitlement: guests read the first 2 rails, Basic the
- * first 3 (LIMITS['news-basic'] = 3), Pro everything. SARS & Tax has no
- * stable RSS at capture time; its rail renders an honest "no feed connected"
- * state and Pro users can wire one with a custom feed.
+ * first 3 (LIMITS['news-basic'] = 3), Pro everything.
  */
 
 export const NEWS_RAILS: NewsRailDef[] = [
@@ -24,10 +34,18 @@ export const NEWS_RAILS: NewsRailDef[] = [
   { id: 'Construction', label: 'Construction', blurb: 'Infrastructure & construction sector press.' },
   { id: 'Technology', label: 'Technology', blurb: 'IT & telecom industry press.' },
   { id: 'Finance', label: 'Finance', blurb: 'Markets, banking & money press.' },
-  { id: 'SARS_Tax', label: 'SARS & Tax', blurb: 'Tax authority releases — no stable feed yet.' },
+  { id: 'SARS_Tax', label: 'SARS & Tax', blurb: 'Tax, compliance & financial regulation press.' },
 ];
 
 export const NEWS_SOURCES: NewsSourceDef[] = [
+  {
+    id: 'citizenbusiness',
+    name: 'The Citizen — Business',
+    homepage: 'https://www.citizen.co.za/business',
+    rssUrl: 'https://www.citizen.co.za/business/feed/',
+    rail: 'Business',
+    note: 'National daily business desk.',
+  },
   {
     id: 'sanews',
     name: 'SAnews.gov.za',
@@ -37,20 +55,28 @@ export const NEWS_SOURCES: NewsSourceDef[] = [
     note: 'South African Government News Agency.',
   },
   {
-    id: 'businesstech',
-    name: 'BusinessTech',
-    homepage: 'https://businesstech.co.za',
-    rssUrl: 'https://businesstech.co.za/news/feed/',
-    rail: 'Business',
-    note: 'SA business & technology news.',
+    id: 'polity',
+    name: 'Polity.org.za',
+    homepage: 'https://www.polity.org.za',
+    rssUrl: 'https://www.polity.org.za/page/south-african-news/feed',
+    rail: 'Government',
+    note: 'Policy, legislation & government affairs.',
   },
   {
-    id: 'infrastructurenews',
-    name: 'Infrastructure News',
-    homepage: 'https://www.infrastructurenews.co.za',
-    rssUrl: 'https://www.infrastructurenews.co.za/feed/',
+    id: 'engineeringnews',
+    name: 'Engineering News',
+    homepage: 'https://www.engineeringnews.co.za',
+    rssUrl: 'https://www.engineeringnews.co.za/page/construction/feed',
     rail: 'Construction',
-    note: 'Construction & service-delivery news.',
+    note: 'Construction & engineering sector press.',
+  },
+  {
+    id: 'cconews',
+    name: 'CCE Online News',
+    homepage: 'https://cceonlinenews.com',
+    rssUrl: 'https://cceonlinenews.com/feed',
+    rail: 'Construction',
+    note: 'Construction industry press.',
   },
   {
     id: 'mybroadband',
@@ -61,12 +87,28 @@ export const NEWS_SOURCES: NewsSourceDef[] = [
     note: 'SA IT & tech news.',
   },
   {
+    id: 'techcentral',
+    name: 'TechCentral',
+    homepage: 'https://techcentral.co.za',
+    rssUrl: 'https://techcentral.co.za/feed',
+    rail: 'Technology',
+    note: 'SA ICT industry press.',
+  },
+  {
     id: 'moneyweb',
     name: 'Moneyweb',
     homepage: 'https://www.moneyweb.co.za',
     rssUrl: 'https://www.moneyweb.co.za/feed/',
     rail: 'Finance',
     note: 'SA financial & markets news.',
+  },
+  {
+    id: 'moonstone',
+    name: 'Moonstone',
+    homepage: 'https://www.moonstone.co.za',
+    rssUrl: 'https://www.moonstone.co.za/feed/',
+    rail: 'SARS_Tax',
+    note: 'Compliance & financial-regulation press.',
   },
 ];
 
