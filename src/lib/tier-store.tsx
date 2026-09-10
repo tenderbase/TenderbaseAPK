@@ -18,7 +18,7 @@ import {
   type FeatureKey,
   type Tier,
 } from '@/types/tier';
-import { TIER_COOKIE, TRIAL_END_COOKIE } from '@/lib/tier-cookies';
+import { writePreviewTier } from '@/lib/tier-cookies';
 
 /**
  * Client entitlement store.
@@ -97,15 +97,12 @@ export function TierProvider({
         console.warn('[tier] setTier ignored — entitlements are server-verified');
         return;
       }
+
       setTierState(next);
-      try {
-        document.cookie = `${TIER_COOKIE}=${next}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
-      } catch {
-        /* cookie unavailable (SSR) — state still updates for this session */
-      }
       if (next !== 'pro') setTrialEnd(null);
+      writePreviewTier(next, next === 'pro' ? trialEnd : null);
     },
-    [billingEnforced],
+    [billingEnforced, trialEnd],
   );
 
   const startTrial = useCallback(() => {
@@ -129,13 +126,9 @@ export function TierProvider({
     }
     const end = new Date(Date.now() + PRO_TRIAL_DAYS * 86_400_000).toISOString();
     setTrialEnd(end);
-    try {
-      document.cookie = `${TRIAL_END_COOKIE}=${end}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
-    } catch {
-      /* ignore */
-    }
-    setTier('pro');
-  }, [billingEnforced, router, setTier]);
+    writePreviewTier('pro', end);
+    setTierState('pro');
+  }, [billingEnforced, router]);
 
   const endPro = useCallback(() => {
     if (billingEnforced) {
@@ -148,8 +141,10 @@ export function TierProvider({
         });
       return;
     }
-    setTier('basic');
-  }, [billingEnforced, router, setTier]);
+    setTierState('basic');
+    setTrialEnd(null);
+    writePreviewTier('basic', null);
+  }, [billingEnforced, router]);
 
   const value = useMemo<EntitlementValue>(() => {
     const daysLeft = daysUntilTrialEnd(trialEnd);

@@ -165,12 +165,24 @@ guarded  "Company profile requires auth"  "/profile/company"
 guarded  "Preferences requires auth"      "/profile/preferences"
 guarded  "Tender detail requires auth"    "/tenders/cmtt6lx56000142xs7i6g1dkg"
 guarded  "Briefing requires auth"         "/briefing"
+# The first-run Basic/Pro decision lives behind the account it is asking about.
+guarded  "Plan choice requires auth"      "/welcome"
 # A signed-out visitor must not even learn whether a tender exists; with the
 # auth open, the genuine 404 is the correct answer.
 if [ "$OPEN" = "1" ]; then
   route  "Unknown tender 404s"            "/tenders/not-a-real-cuid" 404
 else
   guarded "Unknown tender requires auth"  "/tenders/not-a-real-cuid"
+fi
+
+# --- Onboarding (first run) ------------------------------------------------
+# Without credentials the decision screen must still be honest: both doors
+# offered, the Pro trial described as something that does not renew by itself,
+# and the missing account store admitted rather than faked.
+if [ "$UNAUTHED" = "1" ]; then
+  contains "First-run screen offers Basic"     "/welcome" "Continue with Basic"
+  contains "First-run screen offers the trial" "/welcome" "free trial"
+  contains "First-run screen labels preview"   "/welcome" "Preview mode"
 fi
 
 if [ "$OPEN" = "1" ]; then

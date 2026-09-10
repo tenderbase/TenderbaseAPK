@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
@@ -97,6 +98,12 @@ export function LoginView() {
           <p className="mt-0.5 text-[11.5px] leading-[1.45] text-ink-2">
             Add your Supabase URL and key to <code>.env.local</code>. See GOOGLE-AUTH-SETUP.md.
           </p>
+          <Link
+            href="/welcome"
+            className="mt-2 inline-block text-[11.5px] font-semibold text-navy underline decoration-line underline-offset-2"
+          >
+            Preview the first-run plan screen →
+          </Link>
         </div>
       )}
 

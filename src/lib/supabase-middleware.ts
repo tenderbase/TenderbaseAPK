@@ -5,7 +5,7 @@ import {
 } from './supabase-config';
 
 /** Routes that require a signed-in user. */
-const PROTECTED = ['/', '/search', '/saved', '/alerts', '/profile', '/tenders', '/briefing'];
+const PROTECTED = ['/', '/search', '/saved', '/alerts', '/profile', '/tenders', '/briefing', '/welcome'];
 
 /** Routes only a signed-out user should see. */
 const AUTH_ROUTES = ['/login', '/signup'];
