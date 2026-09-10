@@ -55,8 +55,18 @@ PAYFAST_MERCHANT_KEY=46f0cd694581a    # (sandbox: sandbox.payfast.co.za)
 PAYFAST_PASSPHRASE=<your salt>        # REQUIRED — see below
 PAYFAST_SANDBOX=true                  # false in production
 SUPABASE_SERVICE_ROLE_KEY=<key>       # ONLY writer of billing rows; server-side
-NEXT_PUBLIC_SITE_URL=https://your-domain.example  # return/cancel/notify origin
+NEXT_PUBLIC_SITE_URL=https://your-domain.example  # return/cancel/notify origin — REQUIRED in production
+# TENDERBASE_ALLOWED_HOSTS=preview.your-domain.example  # only if one deployment serves several hosts
 ```
+
+- **`NEXT_PUBLIC_SITE_URL` is not optional in production.** `return_url`,
+  `cancel_url` and `notify_url` are baked into the signed checkout request, so
+  the origin has to come from configuration, not from the request's Host header
+  — a forged Host would otherwise move the ITN (payer email, amount, token,
+  signature) and the post-payment redirect to another domain. Without a pinned
+  origin (or an allowlisted host) the billing routes answer 503
+  `site_url_unpinned` and nothing is signed. Outside production the request host
+  is accepted, so local and sandboxed previews need no setup.
 
 - **The passphrase is not optional.** PayFast requires it for subscription
   payment signatures *and* for every Recurring Billing API call (cancellation).

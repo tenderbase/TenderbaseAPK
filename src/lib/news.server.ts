@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { FIXTURES_ALLOWED } from '@/lib/tender-api.server';
+import { assertPublicFeedTarget, FeedTargetError } from '@/lib/feed-target';
 import { FIXTURE_NEWS, FIXTURE_NEWS_CAPTURED_AT } from '@/lib/fixtures/news';
 import { parseFeedXml, newsItemId } from '@/lib/news-rss';
 import { NEWS_SOURCES, railSources, sourceDef } from '@/lib/news-sources';
@@ -14,10 +15,15 @@ import type { NewsFeedStatus, NewsItem, NewsRailEnvelope, NewsRailId } from '@/t
  *   - Production: a feed outage is a red error envelope — fixtures can
  *     never render there.
  *   - A tiny TTL cache keeps a rail read from burning 5 fetches per request.
+ *
+ * Anything a *user* types as a feed URL is additionally put through
+ * `lib/feed-target.ts` before we connect: our server must not be turned into a
+ * proxy for its own network, and a feed response must not be allowed to be as
+ * large as it likes.
  */
 
 export interface NewsFeedError extends Error {
-  code: 'NETWORK_ERROR' | 'HTTP_ERROR' | 'PARSE_ERROR';
+  code: 'NETWORK_ERROR' | 'HTTP_ERROR' | 'PARSE_ERROR' | 'BLOCKED';
 }
 
 function feedError(code: NewsFeedError['code'], message: string): NewsFeedError {
@@ -26,25 +32,124 @@ function feedError(code: NewsFeedError['code'], message: string): NewsFeedError 
   return e;
 }
 
-async function fetchFeedText(url: string): Promise<string> {
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      signal: AbortSignal.timeout(9_000),
-      headers: { 'user-agent': 'TenderBase/1.0 (+news reader)' },
-      cache: 'no-store',
-    });
-  } catch (err) {
-    const name = err instanceof Error ? err.name : '';
-    throw feedError(
-      name === 'TimeoutError' ? 'NETWORK_ERROR' : 'NETWORK_ERROR',
-      name === 'TimeoutError' ? 'Feed timed out.' : 'Feed unreachable.',
-    );
+/** RSS is a few tens of kilobytes. A gigabyte is a download, not a feed. */
+export const MAX_FEED_BYTES = 1_500_000;
+
+/** Redirect budget for the guarded (user-supplied) path, where each hop is re-validated. */
+const MAX_FEED_HOPS = 3;
+
+/**
+ * Only used for the guarded path; see `fetchFeedText`. Imported lazily for the
+ * same reason `fromPayfastIp` does it: `node:dns` stays out of the module graph
+ * until something actually asks where a user-supplied host lives.
+ */
+async function publicAddresses(hostname: string): Promise<string[]> {
+  const { lookup } = await import('node:dns/promises');
+  const found = await lookup(hostname, { all: true });
+  return found.map((entry) => entry.address);
+}
+
+interface FeedFetchOptions {
+  /**
+   * Validate the target (and every redirect hop) against the private-address
+   * policy. Required for user-supplied URLs; skipped for the curated registry,
+   * whose feed addresses are repo constants and would otherwise pay a DNS
+   * lookup per fetch.
+   */
+  guardTarget?: boolean;
+}
+
+/** Reads a response body with a hard byte ceiling, without buffering first. */
+async function readCapped(res: Response, maxBytes: number): Promise<string> {
+  if (!res.body) return '';
+  const declared = Number(res.headers.get('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw feedError('HTTP_ERROR', `Feed response is too large (${Math.round(declared / 1024)} KB).`);
   }
-  if (!res.ok) throw feedError('HTTP_ERROR', `Feed responded ${res.status}.`);
-  const text = await res.text();
-  if (text.trim().length === 0) throw feedError('PARSE_ERROR', 'Feed body was empty.');
-  return text;
+  const reader = res.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw feedError('HTTP_ERROR', 'Feed response is too large to read.');
+    }
+    // Copied, not borrowed: the stream may reuse the chunk's backing buffer.
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
+ * Fetch one feed body. Exported for the tests: the byte cap and the per-hop
+ * redirect policy can only be exercised against a real socket, and `guardTarget`
+ * is the switch they need. Production callers use `fetchSourceFeed` (curated,
+ * repo-controlled addresses) or `previewFeed` (user input, guarded).
+ */
+export async function fetchFeedText(url: string, opts: FeedFetchOptions = {}): Promise<string> {
+  let current = url;
+  // `redirect: 'manual'` on the guarded path so no hop can slip past the policy.
+  // Node's fetch exposes the status and Location for those, which is what this
+  // loop needs; the curated path keeps native following.
+  const hops = opts.guardTarget ? MAX_FEED_HOPS : 0;
+
+  for (let hop = 0; ; hop++) {
+    if (opts.guardTarget) {
+      try {
+        await assertPublicFeedTarget(current, publicAddresses);
+      } catch (e) {
+        if (e instanceof FeedTargetError) {
+          // "We could not look it up" is a network fact about this environment,
+          // not a policy decision — telling a user their feed was *refused*
+          // because a sandbox has no DNS would be a lie.
+          if (e.reason === 'NO_ADDRESS') throw feedError('NETWORK_ERROR', 'Feed unreachable.');
+          throw feedError('BLOCKED', e.message);
+        }
+        throw e;
+      }
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(current, {
+        signal: AbortSignal.timeout(9_000),
+        headers: { 'user-agent': 'TenderBase/1.0 (+news reader)' },
+        cache: 'no-store',
+        redirect: opts.guardTarget ? 'manual' : 'follow',
+      });
+    } catch (err) {
+      const name = err instanceof Error ? err.name : '';
+      throw feedError(
+        name === 'TimeoutError' ? 'NETWORK_ERROR' : 'NETWORK_ERROR',
+        name === 'TimeoutError' ? 'Feed timed out.' : 'Feed unreachable.',
+      );
+    }
+
+    // Only the guarded path sees raw 3xx responses: native following has
+    // already resolved (or failed) them on the curated path.
+    if (hops > 0 && res.status >= 300 && res.status < 400) {
+      if (hop >= hops) throw feedError('HTTP_ERROR', `Feed redirected too many times (${res.status}).`);
+      // Drain the redirect's (usually empty) body so the socket comes back to
+      // the pool instead of stalling on a half-read response.
+      await res.body?.cancel().catch(() => undefined);
+      const location = res.headers.get('location');
+      if (!location) throw feedError('HTTP_ERROR', `Feed redirected with no target (${res.status}).`);
+      try {
+        current = new URL(location, current).toString();
+      } catch {
+        throw feedError('HTTP_ERROR', 'Feed sent a malformed redirect.');
+      }
+      continue;
+    }
+    if (!res.ok) throw feedError('HTTP_ERROR', `Feed responded ${res.status}.`);
+    const text = await readCapped(res, MAX_FEED_BYTES);
+    if (text.trim().length === 0) throw feedError('PARSE_ERROR', 'Feed body was empty.');
+    return text;
+  }
 }
 
 function toNewsItem(sourceId: string, raw: { title: string; url: string | null; publishedAt: string | null; dek: string }): NewsItem | null {
@@ -167,19 +272,18 @@ export async function getNewsItemById(id: string): Promise<{ item: NewsItem; sou
   return { item, sourceName: def.name, sourceHomepage: def.homepage };
 }
 
-/** Live test of an arbitrary RSS/Atom URL (Pro custom feeds, §5.7). */
+/**
+ * Live test of an arbitrary RSS/Atom URL (Pro custom feeds, §5.7).
+ *
+ * This is the one feed fetch whose URL comes from a customer, so it runs with
+ * `guardTarget`: every hop is judged by `lib/feed-target.ts` before we connect,
+ * which is what stops the endpoint from being a proxy onto our own network.
+ * Entitlement is enforced by the route, not here.
+ */
 export async function previewFeed(url: string): Promise<{ feedTitle: string | null; items: NewsItem[] }> {
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(url);
-  } catch {
-    throw feedError('PARSE_ERROR', 'That is not a valid URL.');
-  }
-  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    throw feedError('PARSE_ERROR', 'Only http(s) feeds are supported.');
-  }
-  const host = parsedUrl.hostname;
-  const text = await fetchFeedText(url);
+  const text = await fetchFeedText(url, { guardTarget: true });
+  // Safe to parse: fetchFeedText already rejected anything unparseable.
+  const host = new URL(url).hostname;
   const parsed = parseFeedXml(text);
   const items: NewsItem[] = [];
   for (const raw of parsed.items.slice(0, 8)) {

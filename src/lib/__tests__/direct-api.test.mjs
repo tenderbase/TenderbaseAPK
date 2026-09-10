@@ -376,3 +376,75 @@ test('a stalled upstream trips the timeout instead of hanging the screen', async
   });
   assert.ok(Date.now() - started < 5_000, 'the abort fired on schedule, not on the OS timeout');
 });
+
+// ---------------------------------------------------------------------------
+// The detail route's outage status (regression: the fallback could never fire)
+//
+// `/api/tenders/[id]` answers 503 for `source: 'error'` so a CDN cannot cache an
+// outage under a `s-maxage` header. That is right for the cache and was wrong
+// for the client: `request` threw on any non-2xx, so `tenderApi.getById` never
+// reached the retry its own module documents. These pin the reconciliation.
+// ---------------------------------------------------------------------------
+
+const OUTAGE = {
+  source: 'error',
+  notice: 'Could not reach the tender service. Please try again shortly.',
+};
+
+test('detail: a 503 outage envelope is an answer, so the browser retry runs', async (t) => {
+  const calls = stubFetch(t, async (url) => {
+    if (url.startsWith('/api/tenders/')) return jsonResponse(OUTAGE, 503);
+    return jsonResponse({ tender: { ...TENDER, amendments: [] }, source: 'live' });
+  });
+
+  const res = await tenderApi.getById(TENDER.id);
+
+  assert.equal(calls.length, 2, 'the envelope is parsed, not thrown, so the retry gets its turn');
+  assert.ok(calls[1].url.startsWith(DIRECT_API_URL), 'and it goes to the upstream itself');
+  assert.equal(res.source, 'live');
+  assert.equal(res.via, 'browser');
+  assert.equal(res.tender?.id, TENDER.id);
+});
+
+test('detail: when the retry also fails the outage is returned, not dressed up', async (t) => {
+  stubFetch(t, async (url) => {
+    if (url.startsWith('/api/tenders/')) return jsonResponse(OUTAGE, 503);
+    throw new TypeError('Failed to fetch');
+  });
+
+  const res = await tenderApi.getById(TENDER.id);
+  assert.equal(res.source, 'error', 'still an outage, still honest');
+  assert.equal(res.notice, OUTAGE.notice);
+  assert.equal(res.tender, undefined, 'and no tender was invented to cover it up');
+});
+
+test('detail: a fixture envelope is replaced the same way', async (t) => {
+  const calls = stubFetch(t, async (url) => {
+    if (url.startsWith('/api/tenders/')) {
+      return jsonResponse({ ...TENDER, source: 'fixture', notice: 'captured' });
+    }
+    return jsonResponse({ tender: { ...TENDER, amendments: [] }, source: 'live' });
+  });
+  const res = await tenderApi.getById(TENDER.id);
+  assert.equal(calls.length, 2);
+  assert.equal(res.source, 'live');
+});
+
+test('detail: a live server answer is never re-fetched, and a crash still throws', async (t) => {
+  const live = stubFetch(t, async (url) => {
+    if (url.startsWith('/api/tenders/')) {
+      return jsonResponse({ tender: { ...TENDER, amendments: [] }, source: 'live', via: 'server' });
+    }
+    throw new Error('must not be reached');
+  });
+  const res = await tenderApi.getById(TENDER.id);
+  assert.equal(live.length, 1);
+  assert.equal(res.via, 'server', 'server-served provenance is left alone');
+
+  stubFetch(t, async () => ({
+    ok: false,
+    status: 500,
+    text: async () => 'Internal Server Error',
+  }));
+  await assert.rejects(tenderApi.getById(TENDER.id), /500/, 'a real failure is not a data source');
+});

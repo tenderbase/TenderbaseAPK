@@ -31,5 +31,17 @@ services:
       - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
         sync: false
         required: true
+      # --- PayFast billing ---
+      # The exact origin customers use. PayFast's return/cancel/notify URLs are
+      # built from this and signed with it, never from the request Host header
+      # (see src/lib/billing-request.ts). Leave the billing routes unconfigured
+      # until this is set: they answer an honest 503 without it.
+      - key: NEXT_PUBLIC_SITE_URL
+        sync: false
+        required: true
+      # Only needed when one deployment must answer on more than one host.
+      - key: TENDERBASE_ALLOWED_HOSTS
+        sync: false
+        required: false
       # NOTE: do NOT set NEXT_PUBLIC_DEV_AUTH_BYPASS — dev-gated, and the
       # deployed app must use real Supabase auth.

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { REASON_COPY, entitlementFromSubscription } from '@/lib/entitlement';
-import { previewGrantAllowed } from '@/lib/tier-cookies';
+import { cookieGrantUnlocksServerAction, previewGrantAllowed } from '@/lib/tier-cookies';
 
 const NOW = new Date('2026-09-09T12:00:00.000Z');
 const FUTURE = '2026-09-20T12:00:00.000Z';
@@ -120,4 +120,22 @@ test('the cookie tier is the mechanism only where there is no account store', ()
 
 test('a dev auth bypass may still preview with real credentials configured', () => {
   assert.equal(previewGrantAllowed({ supabaseConfigured: true, authBypassed: true }), true);
+});
+
+test('a verified or guest answer is not the problem; a cookie is', () => {
+  assert.equal(cookieGrantUnlocksServerAction({ source: 'verified', isProduction: true }), true);
+  assert.equal(cookieGrantUnlocksServerAction({ source: 'guest', isProduction: true }), true, 'guest is free, so it unlocks nothing anyway');
+  assert.equal(cookieGrantUnlocksServerAction({ source: 'cookie', isProduction: true }), false);
+});
+
+test('a preview grant may still drive server-side features outside production', () => {
+  // Where there is no account store, the cookie is the whole mechanism…
+  const previewOnly = { supabaseConfigured: false, authBypassed: false };
+  assert.equal(previewGrantAllowed(previewOnly), true);
+  // …and it is still not enough for a feature that makes our server connect to
+  // a URL the browser supplied, on a production deployment.
+  assert.equal(cookieGrantUnlocksServerAction({ source: 'cookie', isProduction: true }), false);
+  // Outside production there is no billing to bypass and no network to escape
+  // onto, so the local custom-feed tester keeps working.
+  assert.equal(cookieGrantUnlocksServerAction({ source: 'cookie', isProduction: false }), true);
 });

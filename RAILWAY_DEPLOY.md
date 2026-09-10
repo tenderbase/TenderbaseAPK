@@ -49,6 +49,10 @@ railway variables --set TENDERBASE_API_URL=https://tenderbase-api-rqrh.onrender.
 railway variables --set TENDERBASE_ADMIN_SECRET=<secret>
 railway variables --set NEXT_PUBLIC_SUPABASE_URL=<url>
 railway variables --set NEXT_PUBLIC_SUPABASE_ANON_KEY=<key>
+
+# Only when PayFast billing is enabled: the origin PayFast returns to and posts
+# ITNs to. Never derived from the request Host header.
+railway variables --set NEXT_PUBLIC_SITE_URL=https://<your-railway-domain>
 ```
 
 **Do not set `NEXT_PUBLIC_DEV_AUTH_BYPASS`.** It is ignored in production

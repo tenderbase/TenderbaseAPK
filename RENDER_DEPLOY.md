@@ -55,6 +55,14 @@ Render reads `render.yaml` and pre-fills: Node runtime, build
 | `TENDERBASE_ADMIN_SECRET` | generate your own | no (admin/sync endpoints) |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API | yes |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API | yes |
+| `NEXT_PUBLIC_SITE_URL` | this service's own public origin | only with PayFast billing — see below |
+
+`NEXT_PUBLIC_SITE_URL` is the origin PayFast sends the customer back to and
+posts the ITN to. It is read from configuration and never from the request's
+`Host` header, so a deployment that turns billing on without it gets an honest
+503 from `/api/billing/*` instead of a signed checkout pointed at whatever host
+the caller asked for. Use `TENDERBASE_ALLOWED_HOSTS` (comma-separated) only when
+one deployment must answer on several origins.
 
 Pre-filled by the Blueprint (override in **Environment** if wrong):
 

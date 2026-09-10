@@ -3,13 +3,15 @@ import 'server-only';
 import type { NextRequest } from 'next/server';
 
 import { billingStorageConfigured, payfastConfig } from '@/lib/billing.server';
+import { resolveSiteOrigin, type SiteOriginInput } from '@/lib/site-origin';
 import { getUser } from '@/lib/supabase-server';
 
 /**
  * Shared gate for the billing routes: every one of them needs the same
- * "is billing even configured", "is anyone signed in" answers before it can
- * do anything honest. Keeping it here means the embedded checkout, the
- * hosted checkout and the trial route cannot drift apart.
+ * "is billing even configured", "is anyone signed in", "which origin do we
+ * hand to PayFast" answers before it can do anything honest. Keeping it here
+ * means the embedded checkout, the hosted checkout and the trial route cannot
+ * drift apart.
  */
 
 export interface BillingCaller {
@@ -23,15 +25,15 @@ export type BillingGate =
   | { ok: true; caller: BillingCaller }
   | { ok: false; status: 401 | 503; error: string; message: string };
 
-/** Public origin of this deployment, so PayFast can call us back. */
-export function siteOrigin(req: NextRequest): string {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (configured) return configured.replace(/\/+$/, '');
-  // Behind the preview proxy these headers carry the public origin.
-  const proto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
-  const host = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim() ?? req.headers.get('host');
-  if (host) return `${proto ?? 'https'}://${host}`;
-  return new URL(req.url).origin;
+/** Config for origin resolution, read here so callers never touch process.env. */
+function siteOriginInput(req: NextRequest): SiteOriginInput {
+  return {
+    siteUrl: process.env.NEXT_PUBLIC_SITE_URL,
+    allowedHosts: process.env.TENDERBASE_ALLOWED_HOSTS,
+    forwardedHost: req.headers.get('x-forwarded-host'),
+    host: req.headers.get('host'),
+    forwardedProto: req.headers.get('x-forwarded-proto'),
+  };
 }
 
 export async function billingGate(req: NextRequest): Promise<BillingGate> {
@@ -63,6 +65,13 @@ export async function billingGate(req: NextRequest): Promise<BillingGate> {
     };
   }
 
+  // Last gate before money moves: without a declared origin the signed request
+  // would carry whatever Host the caller sent.
+  const origin = resolveSiteOrigin(siteOriginInput(req));
+  if (!origin.ok) {
+    return { ok: false, status: 503, error: origin.error, message: origin.message };
+  }
+
   const meta = (user.user_metadata ?? {}) as { full_name?: string; name?: string };
   const fullName = (meta.full_name ?? meta.name ?? '').trim();
   const [first, ...rest] = fullName.split(/\s+/).filter(Boolean);
@@ -73,7 +82,7 @@ export async function billingGate(req: NextRequest): Promise<BillingGate> {
       userId: user.id,
       email: user.email ?? '',
       name: { first: first ?? undefined, last: rest.join(' ') || undefined },
-      origin: siteOrigin(req),
+      origin: origin.origin,
     },
   };
 }

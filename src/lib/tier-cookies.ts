@@ -18,6 +18,30 @@ export function previewGrantAllowed(input: {
   return !input.supabaseConfigured || input.authBypassed;
 }
 
+/**
+ * May a browser-supplied cookie unlock a feature that makes OUR SERVER issue a
+ * request (today: the custom-feed preview in `/api/news/preview`)?
+ *
+ * A preview grant is fine for reading a few more news categories — the content
+ * is public either way, and the worst case is an unlocked UI. It is not fine
+ * for a feature that takes a URL from the browser and makes the server connect
+ * to it: on a deployment with no account store, `tb_tier=pro` typed into
+ * devtools would be the only thing standing between an anonymous visitor and a
+ * server-side fetch of an arbitrary address. So the endpoints that fetch on our
+ * server's behalf require a *verified* subscription, and honour the cookie only
+ * outside production, where there is no real billing to protect and no real
+ * network to escape onto.
+ *
+ * This is deliberately narrower than `previewGrantAllowed`, which governs UI
+ * entitlement in general.
+ */
+export function cookieGrantUnlocksServerAction(input: {
+  source: 'verified' | 'guest' | 'cookie';
+  isProduction: boolean;
+}): boolean {
+  return input.source !== 'cookie' || !input.isProduction;
+}
+
 /** Cookie lifetime: a year, matching how long a preview grant may last. */
 const YEAR_SECONDS = 60 * 60 * 24 * 365;
 
