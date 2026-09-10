@@ -11,6 +11,15 @@ import type { Tier } from '@/types/tier';
 
 const VALID: Tier[] = ['free', 'basic', 'pro'];
 
+/**
+ * Explicit testing override for the live/staging deployment.
+ *
+ * Set TENDERBASE_TEST_PRO=true on the Render web service while testing, and
+ * remove/disable it before real billing goes live. When enabled, every
+ * visitor/account resolves to Pro regardless of the stored billing tier.
+ */
+const testProEnabled = process.env.TENDERBASE_TEST_PRO === 'true';
+
 function isTier(v: string | undefined): v is Tier {
   return v !== undefined && (VALID as string[]).includes(v);
 }
@@ -21,34 +30,21 @@ export interface ServerTier {
   /**
    * 'verified' — the tier came from this account's billing row.
    * 'guest'    — configured deployment, nobody signed in: free, and the
-   *              browser gets no say. Entitlement actions route to sign-in.
+   *              browser gets no say.
    * 'cookie'   — no account store exists (preview deployment) or a dev auth
    *              bypass is on, so the cookie is the whole mechanism.
-   *
-   * Anything other than 'cookie' means the browser cannot grant itself a
-   * tier, which is what the client store checks before letting a control
-   * write one.
    */
   source: 'verified' | 'guest' | 'cookie';
 }
 
-/**
- * Server-side tier resolution.
- *
- * With Supabase configured AND a signed-in user, the account's verified
- * subscription decides (see entitlement.ts) — the cookie is ignored, so a
- * cleared or hand-edited cookie can never grant Pro.
- *
- * With Supabase configured and nobody signed in the answer is 'guest': free.
- * The cookie is only consulted where there is no account store at all (or a
- * dev bypass says so) — otherwise `tb_tier=pro` typed into devtools would
- * unlock paid features, which is precisely the hole billing exists to close.
- *
- * A failed lookup on a configured deployment also fails closed to 'guest'.
- * Browsing is unaffected (the catalogue is free by design); only entitlements
- * are withheld until we can prove otherwise.
- */
+/** Server-side tier resolution. */
 export async function getServerTier(): Promise<ServerTier> {
+  // Testing override intentionally runs before auth/billing resolution so the
+  // live app can exercise the complete Pro UI while the product is being built.
+  if (testProEnabled) {
+    return { tier: 'pro', trialEnd: null, source: 'cookie' };
+  }
+
   try {
     const user = await getUser();
     if (user) {
