@@ -92,6 +92,29 @@ export class TenderApiError extends Error {
   }
 }
 
+/**
+ * Envelope check: a 200 from the WRONG service is still a failure.
+ *
+ * The September 2026 production incident: the web deployment's
+ * `TENDERBASE_API_URL` still pointed at the retired API, which answers
+ * `GET /tenders` with 200 and a `{ data: [...] }` body. The old code read
+ * `.results` off it, got `undefined`, and served a confident-looking
+ * `{"results":[],"total":0,"source":"live"}` — a lying-empty catalogue — while
+ * every detail id 404'd. Any 200 whose envelope is not the documented shape is
+ * an upstream error, so the error fallbacks (and the browser-direct retry,
+ * which uses its own URL) engage instead of believing it.
+ *
+ * Deliberately NOT retried: a parseable wrong shape is deterministic, not a
+ * transient cold-start — retrying would only delay the fallback.
+ */
+function unexpectedShape(label: string, field: string): TenderApiError {
+  return new TenderApiError(
+    502,
+    'UPSTREAM_ERROR',
+    `The ${label} payload was not the expected shape (${field} missing).`,
+  );
+}
+
 interface FetchOpts {
   /** ISR window in seconds. Tender data changes on a sync cadence, not per request. */
   revalidate?: number;
@@ -268,24 +291,50 @@ export function tenderApiServerFrom(rawBaseUrl: string, options: TenderApiOption
      * `/tenders/latest` or `/tenders/closing-soon` on this service; full-text
      * search is the `q` param and "closing soon" is `closingAfter` + `sort=closing`.
      */
-    list(query: ApiTenderQuery = {}, opts?: FetchOpts) {
+    async list(query: ApiTenderQuery = {}, opts?: FetchOpts) {
       const limit = Math.min(query.limit ?? 20, MAX_LIMIT);
-      return fetchJson<ApiTenderListResponse>(`/tenders${buildQuery({ ...query, limit })}`, opts);
+      const res = await fetchJson<ApiTenderListResponse>(
+        `/tenders${buildQuery({ ...query, limit })}`,
+        opts,
+      );
+      if (!res || !Array.isArray(res.results)) throw unexpectedShape('tender list', 'results[]');
+      return res;
     },
 
-    /** `GET /tenders/:id` — note the `{ tender }` envelope, not a bare object. */
-    getById(id: string, opts?: FetchOpts) {
-      return fetchJson<ApiTenderDetailResponse>(`/tenders/${encodeURIComponent(id)}`, opts);
+    /**
+     * `GET /tenders/:id` — note the `{ tender }` envelope, not a bare object.
+     * A 200 without it (the retired service answers numeric ids this way, and
+     * 404s everything else) is a failure, never an empty detail.
+     */
+    async getById(id: string, opts?: FetchOpts) {
+      const res = await fetchJson<ApiTenderDetailResponse>(
+        `/tenders/${encodeURIComponent(id)}`,
+        opts,
+      );
+      if (!res || typeof res.tender !== 'object' || res.tender === null) {
+        throw unexpectedShape('tender detail', 'tender{}');
+      }
+      return res;
     },
 
     /** `GET /categories` — `{ category, count }[]`, 62 entries, count-descending. */
-    categories(opts?: FetchOpts) {
-      return fetchJson<ApiCategoriesResponse>('/categories', { revalidate: 86_400, ...opts });
+    async categories(opts?: FetchOpts) {
+      const res = await fetchJson<ApiCategoriesResponse>(
+        '/categories',
+        { revalidate: 86_400, ...opts },
+      );
+      if (!res || !Array.isArray(res.categories)) throw unexpectedShape('categories', 'categories[]');
+      return res;
     },
 
     /** `GET /provinces` — `{ province, count }[]`, 10 entries. */
-    provinces(opts?: FetchOpts) {
-      return fetchJson<ApiProvincesResponse>('/provinces', { revalidate: 86_400, ...opts });
+    async provinces(opts?: FetchOpts) {
+      const res = await fetchJson<ApiProvincesResponse>(
+        '/provinces',
+        { revalidate: 86_400, ...opts },
+      );
+      if (!res || !Array.isArray(res.provinces)) throw unexpectedShape('provinces', 'provinces[]');
+      return res;
     },
 
     /** `GET /stats` — pipeline health and dataset counts. */

@@ -132,6 +132,13 @@ function directFetch<T>(path: string, timeoutMs = DIRECT_TIMEOUT_MS): Promise<T>
 export async function directTenderPage(opts: ListOptions = {}): Promise<TenderPage> {
   const path = tenderListPath(opts);
   const res = await directFetch<ApiTenderListResponse>(path);
+  // Same rule as the server client: a 200 with the wrong envelope (a stale
+  // NEXT_PUBLIC_TENDERBASE_API_URL, a proxy page that happened to parse) is a
+  // failure, never a believed-empty catalogue. The caller keeps the server's
+  // answer when this throws.
+  if (!res || !Array.isArray(res.results)) {
+    throw new DirectApiError('HTTP_ERROR', 'The tender service answered in an unexpected format.');
+  }
   return {
     results: (res.results ?? []).map((t) => adaptTenderWithState(t)),
     total: res.total ?? res.results?.length ?? 0,
@@ -155,7 +162,11 @@ export type DirectDetail = {
 export async function directTenderDetail(id: string): Promise<DirectDetail | null> {
   try {
     const res = await directFetch<ApiTenderDetailResponse>(`/tenders/${encodeURIComponent(id)}`);
-    if (!res?.tender) return null;
+    if (!res || typeof res.tender !== 'object' || res.tender === null) {
+      // Garbage is "could not ask", not "tender is gone" — null is reserved
+      // for the upstream's own 404, handled just below.
+      throw new DirectApiError('HTTP_ERROR', 'The tender service answered in an unexpected format.');
+    }
     return { tender: adaptDetail(res.tender), source: 'live', via: 'browser' };
   } catch (e) {
     if (e instanceof DirectApiError && e.status === 404) return null;

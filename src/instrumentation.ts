@@ -38,8 +38,28 @@ export async function register(): Promise<void> {
         cache: 'no-store',
       });
       // 200 keeps it warm; a 502 means it was mid-wake — which is exactly the
-      // request that starts the wake, so log and move on.
-      console.log(`[keepalive] tender API ping: ${res.status}`);
+      // request that starts the wake, so log and move on. Anything else is
+      // worth a warning: a wrong TENDERBASE_API_URL (e.g. still pointing at
+      // the retired service, whose /stats 404s) shows up here first, long
+      // before a user reports an empty catalogue.
+      if (!res.ok) {
+        console.warn(
+          `[keepalive] tender API ping: HTTP ${res.status} — is TENDERBASE_API_URL pointing at the live ingestion API?`,
+        );
+        return;
+      }
+      try {
+        const body = (await res.json()) as { stats?: { totalTenders?: unknown } };
+        const total = body?.stats?.totalTenders;
+        console.log(
+          `[keepalive] tender API ping: 200, dataset totalTenders=${typeof total === 'number' ? total : 'unknown'}`,
+        );
+        if (total === 0) {
+          console.warn('[keepalive] upstream reports an EMPTY dataset — check TENDERBASE_API_URL.');
+        }
+      } catch {
+        console.log('[keepalive] tender API ping: 200 (body was not JSON)');
+      }
     } catch (e) {
       console.warn(
         '[keepalive] tender API ping failed:',

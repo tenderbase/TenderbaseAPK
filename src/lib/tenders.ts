@@ -104,6 +104,38 @@ export function isSuspiciouslyEmpty(res: { results?: unknown[]; total?: number }
   return (res.results?.length ?? 0) === 0 && (res.total ?? 0) === 0;
 }
 
+/**
+ * Does this `/stats` answer prove the upstream holds the live dataset?
+ *
+ * Pure — `getTender` fetches, this judges. A 404 for a tender id is only
+ * believed when this says yes: against a wrong or drained service (a stale
+ * `TENDERBASE_API_URL` from before the ingestion migration, a mid-wake
+ * upstream) every id 404s, and trusting that renders a false "Page not found"
+ * for tenders that exist. Anything else — zeros, missing fields, garbage —
+ * sends the detail down the error path, where the browser-direct fallback asks
+ * the configured public host instead.
+ */
+export function statsShowLiveDataset(res: unknown): boolean {
+  if (!res || typeof res !== 'object') return false;
+  const stats = (res as { stats?: unknown }).stats;
+  if (!stats || typeof stats !== 'object') return false;
+  const total = (stats as { totalTenders?: unknown }).totalTenders;
+  return typeof total === 'number' && Number.isFinite(total) && total > 0;
+}
+
+/**
+ * Asks `/stats` (ISR-cached, usually instant) whether the upstream is serving
+ * the live dataset. Never throws: an unreachable or misshapen stats answer is
+ * itself the "do not trust this host" signal.
+ */
+async function upstreamProvesLiveDataset(): Promise<boolean> {
+  try {
+    return statsShowLiveDataset(await tenderApiServer.stats());
+  } catch {
+    return false;
+  }
+}
+
 function matches(t: ApiTender, q: string): boolean {
   const hay = [t.title, t.description, t.organisation, t.tenderNumber, t.category]
     .filter(Boolean)
@@ -230,11 +262,14 @@ export type DetailOutcome =
 /**
  * `GET /tenders/:id`.
  *
- * 404 -> null (the page calls `notFound()`). Upstream unreachable -> the
- * captured fixture if we hold one, otherwise `{ source: 'error' }` — never a
- * bare `null`, because in a dev/preview build a missing fixture means nothing
- * about whether the tender exists. The detail page turns that outcome into a
- * browser-direct attempt (`lib/tender-direct.ts`) before it shows an outage.
+ * 404 -> null (the page calls `notFound()`), but only when `/stats` proves the
+ * upstream holds the live dataset — a 404 from a wrong or drained service is
+ * distrusted into `{ source: 'error' }` instead of a false 404 page.
+ * Upstream unreachable -> the captured fixture if we hold one, otherwise
+ * `{ source: 'error' }` — never a bare `null`, because in a dev/preview build
+ * a missing fixture means nothing about whether the tender exists. The detail
+ * page turns that outcome into a browser-direct attempt (`lib/tender-direct.ts`)
+ * before it shows an outage.
  */
 export async function getTender(id: string): Promise<DetailOutcome> {
   const fromFixtures = (): DetailOutcome => {
@@ -263,7 +298,22 @@ export async function getTender(id: string): Promise<DetailOutcome> {
     }
     return { tender: adaptDetail(res.tender), source: 'live', via: 'server' };
   } catch (e) {
-    if (e instanceof TenderApiError && e.status === 404) return null;
+    if (e instanceof TenderApiError && e.status === 404) {
+      // A 404 is "this tender is gone" ONLY when the upstream proves it holds
+      // the live dataset. The September 2026 incident: a stale
+      // TENDERBASE_API_URL pointed at the retired service, whose numeric-id
+      // world 404s every current id — the old code trusted that and 404'd the
+      // page, never giving the browser-direct fallback its turn. When the
+      // upstream cannot prove itself, answer 'error' so DirectTender resolves
+      // the id against the public host instead.
+      if (await upstreamProvesLiveDataset()) return null;
+      console.error(
+        `[tenders] detail 404 for ${id} distrusted — upstream is not serving the live dataset`,
+      );
+      const local = FIXTURES_ALLOWED ? fromFixtures() : null;
+      if (local) return local;
+      return { source: 'error', notice: FIXTURES_ALLOWED ? fixtureNotice(e) : errorNotice(e) };
+    }
     console.error('[tenders] detail failed:', e instanceof Error ? e.message : e);
     const local = FIXTURES_ALLOWED ? fromFixtures() : null;
     if (local) return local;

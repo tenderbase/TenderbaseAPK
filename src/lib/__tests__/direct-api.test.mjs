@@ -259,6 +259,29 @@ test('a non-JSON body is an error, never a half-rendered page', async (t) => {
   });
 });
 
+test('a wrong-shaped direct page is an error, never a believed-empty catalogue', async (t) => {
+  // Same rule as the server client: a 200 whose envelope is not the documented
+  // shape (stale NEXT_PUBLIC_TENDERBASE_API_URL, a proxy page that parsed)
+  // must throw so the caller keeps the server's answer.
+  stubFetch(t, async () => jsonResponse({ data: [{ id: 1 }], pagination: {} }));
+  await assert.rejects(directTenderPage(), (e) => {
+    assert.ok(e instanceof DirectApiError);
+    assert.equal(e.code, 'HTTP_ERROR');
+    return true;
+  });
+});
+
+test('Detail: a wrong-shaped 200 is a failure, not a missing tender', async (t) => {
+  // Null is reserved for the upstream's own 404 — garbage means "could not
+  // ask", which must surface as a retryable failure, never "no longer listed".
+  stubFetch(t, async () => jsonResponse({ data: { id: 1 } }));
+  await assert.rejects(directTenderDetail('x'), (e) => {
+    assert.ok(e instanceof DirectApiError);
+    assert.equal(e.code, 'HTTP_ERROR');
+    return true;
+  });
+});
+
 // ---------------------------------------------------------------------------
 // The wiring: lib/api.ts
 // ---------------------------------------------------------------------------
