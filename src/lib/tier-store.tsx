@@ -20,16 +20,6 @@ import {
 } from '@/types/tier';
 import { writePreviewTier } from '@/lib/tier-cookies';
 
-/**
- * Client entitlement store.
- *
- * State is seeded from the server, so the first render and SSR agree. When
- * the server resolved the tier from a verified billing row (`billingEnforced`)
- * this store mirrors it and every entitlement action goes through the billing
- * API — a browser cannot grant itself Pro. Otherwise the cookie is the
- * mechanism, which is how the whole app is previewed without credentials.
- */
-
 function daysUntilTrialEnd(endIso: string | null): number {
   if (!endIso) return 0;
   const end = new Date(endIso).getTime();
@@ -43,21 +33,23 @@ export interface TrialInfo {
   endsAtIso: string | null;
 }
 
+export interface TrialStartResult {
+  ok: boolean;
+  status?: number;
+  message?: string;
+}
+
 export interface EntitlementValue {
   tier: Tier;
-  /** True while a trial is active (only meaningful on pro). */
   trial: TrialInfo;
   isPro: boolean;
   isBasic: boolean;
   can: (feature: FeatureKey) => boolean;
-  /** undefined = unlimited/not applicable */
   limit: (feature: FeatureKey) => number | undefined;
-  /** One-off allowances below the access tier (e.g. Basic's 1 deep demo). */
   allowance: (feature: FeatureKey) => number | undefined;
-  /** True when the tier comes from a verified billing row (not a cookie). */
   billingEnforced: boolean;
   setTier: (tier: Tier) => void;
-  startTrial: () => void;
+  startTrial: () => Promise<TrialStartResult>;
   endPro: () => void;
 }
 
@@ -72,19 +64,12 @@ export function TierProvider({
   children: ReactNode;
   initialTier: Tier;
   initialTrialEnd: string | null;
-  /**
-   * True when the server resolved the tier from this account's verified
-   * billing row. Entitlement actions then go through the billing API and the
-   * cookie/dev grants are disabled — a browser cannot grant itself Pro.
-   */
   billingEnforced?: boolean;
 }) {
   const router = useRouter();
   const [tier, setTierState] = useState<Tier>(initialTier);
   const [trialEnd, setTrialEnd] = useState<string | null>(initialTrialEnd);
 
-  // The server is authoritative: when it re-renders with a new entitlement
-  // (after a trial starts, a payment clears, or a period lapses), follow it.
   useEffect(() => {
     setTierState(initialTier);
     setTrialEnd(initialTrialEnd);
@@ -93,11 +78,9 @@ export function TierProvider({
   const setTier = useCallback(
     (next: Tier) => {
       if (billingEnforced) {
-        // Preview-only control. In billing mode the tier is a server fact.
         console.warn('[tier] setTier ignored — entitlements are server-verified');
         return;
       }
-
       setTierState(next);
       if (next !== 'pro') setTrialEnd(null);
       writePreviewTier(next, next === 'pro' ? trialEnd : null);
@@ -105,29 +88,44 @@ export function TierProvider({
     [billingEnforced, trialEnd],
   );
 
-  const startTrial = useCallback(() => {
+  const startTrial = useCallback(async (): Promise<TrialStartResult> => {
     if (billingEnforced) {
-      void fetch('/api/billing/trial', { method: 'POST' })
-        .then(async (res) => {
-          if (res.status === 401) {
-            router.push('/login?next=/pro');
-            return;
-          }
-          if (!res.ok) {
-            console.error('[tier] trial not started:', res.status);
-            return;
-          }
-          router.refresh(); // server re-resolves the entitlement from the row
-        })
-        .catch(() => {
-          /* offline — the sheet stays open and the user can retry */
-        });
-      return;
+      try {
+        const res = await fetch('/api/billing/trial', { method: 'POST' });
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          message?: string;
+        };
+
+        if (res.status === 401) {
+          router.push('/login?next=/pro');
+          return { ok: false, status: 401, message: 'Please sign in to start your free trial.' };
+        }
+
+        if (!res.ok) {
+          const message = body.message ??
+            (body.error === 'already_used'
+              ? 'Your free trial has already been used.'
+              : body.error === 'already_subscribed'
+                ? 'You already have an active Pro subscription.'
+                : 'Unable to start the free trial right now. Please try again.');
+          console.error('[tier] trial not started:', res.status, body.error ?? body.message ?? 'unknown');
+          return { ok: false, status: res.status, message };
+        }
+
+        router.refresh();
+        return { ok: true };
+      } catch (error) {
+        console.error('[tier] trial request failed:', error);
+        return { ok: false, message: 'Could not reach the billing service. Please try again.' };
+      }
     }
+
     const end = new Date(Date.now() + PRO_TRIAL_DAYS * 86_400_000).toISOString();
     setTrialEnd(end);
     writePreviewTier('pro', end);
     setTierState('pro');
+    return { ok: true };
   }, [billingEnforced, router]);
 
   const endPro = useCallback(() => {
@@ -137,7 +135,7 @@ export function TierProvider({
           if (res.ok) router.refresh();
         })
         .catch(() => {
-          /* offline — nothing changes, which is the honest outcome */
+          /* offline — nothing changes */
         });
       return;
     }
