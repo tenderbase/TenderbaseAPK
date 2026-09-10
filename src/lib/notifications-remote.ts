@@ -20,11 +20,11 @@ function toEntry(row: DbNotification): AlertEntry {
   return {
     id: row.id,
     kind: row.kind,
-    tenderId: row.tender_id,
     title: row.title,
     body: row.body,
+    tenderId: row.tender_id,
     createdAt: row.created_at,
-    read: row.read_at === null,
+    read: row.read_at !== null,
     ...(typeof row.score === 'number' ? { score: row.score } : {}),
   };
 }
