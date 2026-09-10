@@ -6,10 +6,21 @@ import { PRO_TRIAL_DAYS } from '@/types/tier';
 
 export const runtime = 'nodejs';
 
-export async function POST() {
+function wantsHtml(request: Request): boolean {
+  return request.headers.get('accept')?.includes('text/html') ?? false;
+}
+
+function browserRedirect(request: Request, path: string) {
+  return NextResponse.redirect(new URL(path, request.url));
+}
+
+export async function POST(request: Request) {
+  const html = wantsHtml(request);
+
   try {
     const user = await getUser();
     if (!user) {
+      if (html) return browserRedirect(request, '/login?next=/pro&trial_error=not_signed_in');
       return NextResponse.json(
         { error: 'not_signed_in', message: 'Create a free account to start the trial.' },
         { status: 401 },
@@ -18,16 +29,22 @@ export async function POST() {
 
     if (process.env.TENDERBASE_TEST_PRO === 'true') {
       const trialEnd = new Date(Date.now() + PRO_TRIAL_DAYS * 86_400_000).toISOString();
+      if (html) return browserRedirect(request, '/pro?trial=started');
       return NextResponse.json({ trialEnd, testMode: true });
     }
 
     const outcome = await startTrial(user.id);
-    if (outcome.ok) return NextResponse.json({ trialEnd: outcome.trialEnd });
+    if (outcome.ok) {
+      if (html) return browserRedirect(request, '/pro?trial=started');
+      return NextResponse.json({ trialEnd: outcome.trialEnd });
+    }
 
     const status = outcome.reason === 'already_used' || outcome.reason === 'already_subscribed' ? 409 : 503;
+    if (html) return browserRedirect(request, `/pro?trial_error=${encodeURIComponent(outcome.reason ?? 'failed')}`);
     return NextResponse.json({ error: outcome.reason }, { status });
   } catch (error) {
     console.error('[billing/trial] POST failed', error);
+    if (html) return browserRedirect(request, '/pro?trial_error=failed');
     return NextResponse.json({ error: 'failed', message: 'Unable to start the trial right now.' }, { status: 503 });
   }
 }
