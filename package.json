@@ -17,6 +17,7 @@
   "dependencies": {
     "@capacitor/android": "^6.2.2",
     "@capacitor/core": "^6.2.2",
+    "@capacitor/local-notifications": "^6.2.2",
     "@supabase/ssr": "0.5.1",
     "@supabase/supabase-js": "2.45.4",
     "clsx": "2.1.1",
