@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { endTrial, startTrial } from '@/lib/billing.server';
 import { getUser } from '@/lib/supabase-server';
+import { PRO_TRIAL_DAYS } from '@/types/tier';
 
 /**
  * The Pro trial, server-side. One trial per account, ever — the browser
@@ -10,6 +11,10 @@ import { getUser } from '@/lib/supabase-server';
  *
  * POST   starts the trial
  * DELETE ends it early (the account drops to Basic immediately)
+ *
+ * Explicit TENDERBASE_TEST_PRO mode is a deliberate deployment-level test
+ * override. In that mode no billing row is required because the deployment
+ * is already server-resolved as Pro.
  */
 
 export const runtime = 'nodejs';
@@ -23,6 +28,11 @@ export async function POST() {
     );
   }
 
+  if (process.env.TENDERBASE_TEST_PRO === 'true') {
+    const trialEnd = new Date(Date.now() + PRO_TRIAL_DAYS * 86_400_000).toISOString();
+    return NextResponse.json({ trialEnd, testMode: true });
+  }
+
   const outcome = await startTrial(user.id);
   if (outcome.ok) return NextResponse.json({ trialEnd: outcome.trialEnd });
 
@@ -34,6 +44,10 @@ export async function DELETE() {
   const user = await getUser();
   if (!user) {
     return NextResponse.json({ error: 'not_signed_in' }, { status: 401 });
+  }
+
+  if (process.env.TENDERBASE_TEST_PRO === 'true') {
+    return NextResponse.json({ ok: true, testMode: true });
   }
 
   const outcome = await endTrial(user.id);
