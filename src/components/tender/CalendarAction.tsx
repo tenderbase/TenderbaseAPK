@@ -7,7 +7,6 @@ import { useTier } from '@/lib/tier-store';
 import { useUpgrade } from '@/components/tier/UpgradeSheet';
 import { saveCalendarEvent } from '@/lib/calendar-remote';
 import { scheduleCalendarAlarm } from '@/lib/native-alarms';
-import { nativeAlarmId } from '@/lib/ai-calendar';
 import type { Tender } from '@/types/tender';
 
 /**
