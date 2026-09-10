@@ -54,7 +54,7 @@ export default function CalendarPage() {
   }
 
   return (
-    <main>
+    <main className="pb-32 md:pb-8">
       <header className="border-b border-line bg-white px-5 pb-3 pt-1.5">
         <div className="flex items-center gap-2.5"><MenuButton className="md:hidden" /><h1 className="text-h2">AI Calendar</h1></div>
         <p className="mt-2 max-w-2xl text-[12.5px] leading-[18px] text-ink-2">Plan tender deadlines, preparation tasks and reminders. On the Android app, alarms are scheduled through the phone notification system.</p>
