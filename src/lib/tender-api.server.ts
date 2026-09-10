@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { buildQuery, MAX_LIMIT } from '@/lib/tender-query';
 import type {
   ApiCategoriesResponse,
   ApiHttpError,
@@ -63,12 +64,11 @@ export const FIXTURES_ONLY =
   (process.env.TENDERBASE_FIXTURES_ONLY === 'true' || process.env.NODE_ENV === 'test');
 
 /**
- * Upstream does not publish a `limit` ceiling and `/docs/json` has empty
- * `paths`, so the cap cannot be read from a spec. 100 is a safe bound: the
- * largest page any screen needs is 20, and a huge page on a cold free-tier
- * instance is how you get a 504.
+ * `MAX_LIMIT` ("Upstream does not publish a `limit` ceiling…") is defined in
+ * `lib/tender-query.ts` so the server path and the browser-direct fallback clamp
+ * identically; re-exported here for existing importers.
  */
-export const MAX_LIMIT = 100;
+export { MAX_LIMIT };
 
 export class TenderApiError extends Error {
   readonly status: number;
@@ -90,17 +90,6 @@ export class TenderApiError extends Error {
     this.code = code;
     this.issues = issues;
   }
-}
-
-/** Drops undefined/null/'' so optional filters never reach the wire as "undefined". */
-function buildQuery(params: Record<string, unknown>): string {
-  const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === null || v === '') continue;
-    qs.set(k, String(v));
-  }
-  const s = qs.toString();
-  return s ? `?${s}` : '';
 }
 
 interface FetchOpts {

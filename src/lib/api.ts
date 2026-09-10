@@ -1,3 +1,11 @@
+import {
+  directFacets,
+  directStats,
+  directTenderDetail,
+  directTenderPage,
+  shouldUseDirectFallback,
+} from '@/lib/tender-direct';
+import type { ListOptions } from '@/lib/tender-query';
 import type { DatasetStats, Facets, TenderPage } from '@/lib/tenders';
 import type { SortOption, TenderWithUserState } from '@/types/tender';
 
@@ -13,6 +21,14 @@ import type { SortOption, TenderWithUserState } from '@/types/tender';
  * previous version advertised `/tenders/recommended`, `/saved`, `/saved/:id`
  * and `/tenders/:id/documents/:id`; none of those were ever implemented, so
  * calling them produced a 404 at runtime. They are gone rather than stubbed.
+ *
+ * BROWSER-DIRECT FALLBACK: when our own route answers with `source: 'fixture'`
+ * or `source: 'error'` — the server could not reach the ingestion API — the
+ * same request is retried against the upstream from the browser, which is
+ * usually on a less restricted network. The upstream is public and CORS-open
+ * (`lib/tender-direct.ts`), and the result keeps its provenance (`via`), so a
+ * caller can always tell a server-side success from a browser-side one. If the
+ * direct attempt also fails, the original server answer is returned unchanged.
  */
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -52,24 +68,57 @@ function toQuery(params: TenderListParams): string {
   return s ? `?${s}` : '';
 }
 
+/** The client's param names are the server's option names plus `q` -> `query`. */
+function toListOptions(params: TenderListParams): ListOptions {
+  const { q, ...rest } = params;
+  return { ...rest, query: q };
+}
+
+/** Logs and returns the server's own answer when the browser attempt fails. */
+async function directOr<T>(original: T, attempt: () => Promise<T>, label: string): Promise<T> {
+  try {
+    return await attempt();
+  } catch (e) {
+    console.warn(
+      `[api] browser-direct ${label} fallback failed:`,
+      e instanceof Error ? e.message : e,
+    );
+    return original;
+  }
+}
+
 export const tenderApi = {
-  list(params: TenderListParams = {}) {
-    return request<TenderPage>(`/tenders${toQuery(params)}`);
+  async list(params: TenderListParams = {}): Promise<TenderPage> {
+    const page = await request<TenderPage>(`/tenders${toQuery(params)}`);
+    if (!shouldUseDirectFallback(page.source)) return page;
+    return directOr(page, () => directTenderPage(toListOptions(params)), 'list');
   },
 
-  getById(id: string) {
-    return request<{ tender: TenderWithUserState; source: string; notice?: string }>(
+  async getById(
+    id: string,
+  ): Promise<{ tender: TenderWithUserState; source: string; notice?: string }> {
+    const res = await request<{ tender: TenderWithUserState; source: string; notice?: string }>(
       `/tenders/${encodeURIComponent(id)}`,
+    );
+    if (!shouldUseDirectFallback(res.source as TenderPage['source'])) return res;
+    return directOr(
+      res,
+      async () => (await directTenderDetail(id)) ?? res,
+      'detail',
     );
   },
 
   /** Category and province vocabularies with live counts, for filter UIs. */
-  facets() {
-    return request<Facets>('/facets');
+  async facets(): Promise<Facets> {
+    const facets = await request<Facets>('/facets');
+    if (!shouldUseDirectFallback(facets.source)) return facets;
+    return directOr(facets, () => directFacets(), 'facets');
   },
 
   /** Pipeline totals: 411 indexed, 396 active, 101 expiring soon, etc. */
-  stats() {
-    return request<DatasetStats>('/stats');
+  async stats(): Promise<DatasetStats> {
+    const stats = await request<DatasetStats>('/stats');
+    if (!shouldUseDirectFallback(stats.source)) return stats;
+    return directOr(stats, () => directStats(), 'stats');
   },
 };

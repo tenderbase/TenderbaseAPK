@@ -96,6 +96,30 @@ case "$src" in
   *)       bad "No usable source field in /api/tenders (got: ${src:-none})" ;;
 esac
 
+# The API is public, keyless and CORS-open, so when the SERVER cannot reach it
+# (egress allowlists, corporate proxies, upstream timeouts) the browser retries
+# the same request directly. That code has to actually ship to the client, or
+# the fallback is a silent lie.
+if [ "$OPEN" = "1" ]; then
+  # Retried: a cold `next dev` compiles the page chunk on first request, so an
+  # immediate fetch can miss it. A real regression misses on all three passes.
+  hit=0
+  for _attempt in 1 2 3; do
+    curl -s --max-time 90 "$BASE/" > "$TMP/dash" 2>/dev/null
+    for c in $(grep -oE '/_next/static/chunks/[^"]+\.js' "$TMP/dash" | sort -u | head -40); do
+      # Fetch to a file, then grep it: `curl | grep -q` reports SIGPIPE (not the
+      # match) once grep exits early, and `set -o pipefail` turns that into a fail.
+      curl -s --max-time 60 "$BASE$c" > "$TMP/chunk" 2>/dev/null
+      if grep -q 'tenderbase-api-rqrh.onrender.com' "$TMP/chunk"; then hit=1; break; fi
+    done
+    [ "$hit" = "1" ] && break
+    sleep 3
+  done
+  [ "$hit" = "1" ] \
+    && ok "Browser-direct fallback is in the client bundle" \
+    || bad "Browser-direct fallback never reached the browser (no chunk carries the API URL)"
+fi
+
 # The API matches province/category names EXACTLY and silently ignores unknown
 # params, so the slug the UI used to send returned the whole dataset while the
 # chip still showed as selected. Both halves of that bug are asserted here.
@@ -168,9 +192,19 @@ guarded  "Briefing requires auth"         "/briefing"
 # The first-run Basic/Pro decision lives behind the account it is asking about.
 guarded  "Plan choice requires auth"      "/welcome"
 # A signed-out visitor must not even learn whether a tender exists; with the
-# auth open, the genuine 404 is the correct answer.
+# auth open, the server answers for itself. It can only promise a real 404 when
+# IT can reach the ingestion API — where it cannot (this sandbox), the id is
+# handed to the browser-direct resolver instead of inventing "not found", which
+# is exactly what a live row clicked from a browser-fetched list needs.
 if [ "$OPEN" = "1" ]; then
-  route  "Unknown tender 404s"            "/tenders/not-a-real-cuid" 404
+  got=$(curl -s -o "$TMP/unknown" -w '%{http_code}' --max-time 90 "$BASE/tenders/not-a-real-cuid")
+  if [ "$got" = "404" ]; then
+    ok "Unknown tender 404s (server reached the API)"
+  elif [ "$got" = "200" ] && grep -q "Fetching this tender from the tender service" "$TMP/unknown"; then
+    ok "Unknown tender resolved in the browser (server has no path to the API)"
+  else
+    bad "Unknown tender: expected 404 or the browser resolver (got $got)"
+  fi
 else
   guarded "Unknown tender requires auth"  "/tenders/not-a-real-cuid"
 fi

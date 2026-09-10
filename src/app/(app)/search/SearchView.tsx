@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { DataSourceNotice } from '@/components/ui/DataSourceNotice';
 import { MenuButton } from '@/components/nav/MenuButton';
 import { cn } from '@/lib/cn';
+import { directTenderPage, shouldUseDirectFallback } from '@/lib/tender-direct';
 import { useSavedTenders } from '@/lib/saved-store';
 import { useSavedSearches } from '@/lib/saved-searches-store';
 import { useTier } from '@/lib/tier-store';
@@ -94,6 +95,67 @@ export function SearchView({
     }, 350);
     return () => clearTimeout(id);
   }, [query, initialQuery, params, router]);
+
+  /**
+   * Browser-direct results. The server-rendered `results` are right whenever
+   * the server can reach the ingestion API; when it cannot (dev fixture
+   * fallback, restricted network, upstream timeout) the same query is re-run
+   * from the browser against the public, CORS-open upstream, so a search shows
+   * real tenders instead of a captured snapshot.
+   */
+  const [direct, setDirect] = useState<{
+    results: TenderWithUserState[];
+    total: number;
+    page: number;
+    totalPages: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!shouldUseDirectFallback(source)) {
+      setDirect(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const pageData = await directTenderPage({
+          query: params.get('q') ?? undefined,
+          category: params.get('category') ?? undefined,
+          province: params.get('province') ?? undefined,
+          status: params.get('status') ?? undefined,
+          closingWithin: params.get('closingWithin') ?? undefined,
+          sort: (params.get('sort') as SortOption) || 'newest',
+          page: Number(params.get('page') ?? 1) || 1,
+          limit: 20,
+        });
+        if (cancelled) return;
+        setDirect({
+          results: pageData.results,
+          total: pageData.total,
+          page: pageData.page,
+          totalPages: pageData.totalPages,
+        });
+      } catch (e) {
+        if (!cancelled) {
+          console.warn(
+            '[search] browser-direct tender fallback failed:',
+            e instanceof Error ? e.message : e,
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [source, params]);
+
+  // Browser-direct rows win when present; otherwise the server's answer stands.
+  const shownResults = direct?.results ?? results;
+  const shownTotal = direct?.total ?? total;
+  const shownPage = direct?.page ?? page;
+  const shownTotalPages = direct?.totalPages ?? totalPages;
+  const shownSource: DataSource = direct ? 'live' : source;
+  const shownNotice = direct ? undefined : notice;
 
   const update = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams(params.toString());
@@ -191,7 +253,7 @@ export function SearchView({
       </header>
 
       <div className="px-5 pt-3.5">
-        <DataSourceNotice source={source} notice={notice} />
+        <DataSourceNotice source={shownSource} notice={shownNotice} via={direct ? 'browser' : undefined} />
 
         <div className="mb-3 flex items-center justify-between gap-3">
           <p className="text-meta text-ink-2">
@@ -199,19 +261,19 @@ export function SearchView({
               <span className="flex items-center gap-1.5">
                 <Loader2 size={13} className="animate-spin" aria-hidden /> Searching…
               </span>
-            ) : source === 'error' && total === 0 ? (
+            ) : shownSource === 'error' && shownTotal === 0 ? (
               'Service unavailable'
             ) : (
               <>
-                <span className="font-semibold text-ink">{total.toLocaleString('en-ZA')}</span>{' '}
-                {total === 1 ? 'tender' : 'tenders'} found
+                <span className="font-semibold text-ink">{shownTotal.toLocaleString('en-ZA')}</span>{' '}
+                {shownTotal === 1 ? 'tender' : 'tenders'} found
               </>
             )}
           </p>
           <span className="flex shrink-0 items-center gap-2">
-            {totalPages > 1 && (
+            {shownTotalPages > 1 && (
               <span className="hidden text-caption text-ink-3 sm:inline">
-                Page {page} of {totalPages}
+                Page {shownPage} of {shownTotalPages}
               </span>
             )}
             {session.signedIn && hasAny(currentSearch) && (
@@ -244,7 +306,7 @@ export function SearchView({
           </span>
         </div>
 
-        {source === 'error' && results.length === 0 && !pending ? (
+        {shownSource === 'error' && shownResults.length === 0 && !pending ? (
           <div className="flex flex-col items-center rounded-lg border border-dashed border-line bg-white px-5 py-8 text-center">
             <div className="mb-3.5 flex h-[52px] w-[52px] items-center justify-center rounded-[16px] bg-urgent-bg text-urgent">
               <CloudOff size={24} strokeWidth={1.7} aria-hidden />
@@ -261,7 +323,7 @@ export function SearchView({
               Try again
             </button>
           </div>
-        ) : results.length === 0 && !pending ? (
+        ) : shownResults.length === 0 && !pending ? (
           <EmptyState
             icon={SearchX}
             title="No tenders match your search"
@@ -273,7 +335,7 @@ export function SearchView({
           <div
             className={`space-y-3 md:grid md:grid-cols-2 md:gap-3 md:space-y-0 ${pending ? 'opacity-60' : ''}`}
           >
-            {results.map((t) => (
+            {shownResults.map((t) => (
               <TenderCard
                 key={t.id}
                 tender={{ ...t, isSaved: isSaved(t.id) }}
@@ -283,20 +345,20 @@ export function SearchView({
           </div>
         )}
 
-        {totalPages > 1 && (
+        {shownTotalPages > 1 && (
           <div className="mt-5 flex items-center justify-center gap-2.5">
             <button
               type="button"
-              disabled={page <= 1}
-              onClick={() => update({ page: String(page - 1) })}
+              disabled={shownPage <= 1}
+              onClick={() => update({ page: String(shownPage - 1) })}
               className="h-10 rounded-[10px] border border-line bg-white px-4 text-meta font-medium text-ink disabled:opacity-40"
             >
               Previous
             </button>
             <button
               type="button"
-              disabled={page >= totalPages}
-              onClick={() => update({ page: String(page + 1) })}
+              disabled={shownPage >= shownTotalPages}
+              onClick={() => update({ page: String(shownPage + 1) })}
               className="h-10 rounded-[10px] border border-line bg-white px-4 text-meta font-medium text-ink disabled:opacity-40"
             >
               Next

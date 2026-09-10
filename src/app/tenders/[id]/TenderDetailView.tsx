@@ -37,10 +37,13 @@ export function TenderDetailView({
   tender,
   amendments,
   source,
+  via,
 }: {
   tender: TenderWithUserState;
   amendments: Amendment[];
   source: DataSource;
+  /** 'browser' when the row came from the direct fallback (see lib/tender-direct). */
+  via?: 'server' | 'browser';
 }) {
   const router = useRouter();
   const { session, isSaved, toggleSaved } = useSavedTenders();
@@ -113,7 +116,7 @@ export function TenderDetailView({
       </header>
 
       <div className="px-5">
-        <DataSourceNotice source={source} />
+        <DataSourceNotice source={source} via={via} />
 
         <div className="flex flex-wrap gap-1.5 pt-2">
           <StatusBadge status={status} />

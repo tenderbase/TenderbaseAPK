@@ -14,8 +14,15 @@ import {
   FIXTURE_TENDERS,
 } from '@/lib/fixtures/tender-api';
 import { API_BASE_URL, FIXTURES_ALLOWED, FIXTURES_ONLY, TenderApiError, tenderApiServer } from '@/lib/tender-api.server';
-import type { ApiSort, ApiStats, ApiTender, ApiTenderQuery } from '@/types/api';
-import type { Category, SortOption, TenderWithUserState } from '@/types/tender';
+import { buildApiQuery, closingWithinDays, type ListOptions } from '@/lib/tender-query';
+import type { ApiStats, ApiTender } from '@/types/api';
+import type { Category, TenderWithUserState } from '@/types/tender';
+
+// Re-exported for the existing importers (tests included). The implementation
+// lives in `lib/tender-query.ts` so the browser-direct fallback builds the exact
+// same upstream URL — see `lib/tender-direct.ts`.
+export { buildApiQuery, SORT_MAP } from '@/lib/tender-query';
+export type { ListOptions } from '@/lib/tender-query';
 
 /**
  * The single data source every screen reads from.
@@ -42,82 +49,11 @@ export interface TenderPage {
   source: DataSource;
   /** Present when we served the captured fixtures instead of the live API. */
   notice?: string;
-}
-
-/**
- * App sort -> API sort.
- *
- * `value_desc` cannot be honoured: `valueCents` is null across the whole feed,
- * so there is nothing to order by. It degrades to `latest` instead of sending a
- * value the API would ignore anyway.
- */
-const SORT_MAP: Record<SortOption, ApiSort> = {
-  closing_soon: 'closing',
-  newest: 'latest',
-  value_desc: 'latest',
-};
-
-export interface ListOptions {
-  query?: string;
-  /** Verbatim upstream category, e.g. 'Supplies: Computer Equipment'. */
-  category?: string;
-  /** Verbatim upstream province, e.g. 'KwaZulu-Natal'. */
-  province?: string;
-  /** 'active' | 'complete' | 'cancelled'. */
-  status?: string;
-  /** App-level window ('24h', '7d', '30d') — translated to closingAfter/Before. */
-  closingWithin?: string;
-  sort?: SortOption;
-  page?: number;
-  limit?: number;
-}
-
-// ---------------------------------------------------------------------------
-// Query translation
-// ---------------------------------------------------------------------------
-
-/** '7d' -> 7, '24h' -> 1. Unknown or missing -> 7 days. */
-function closingWithinDays(val?: string): number {
-  if (!val) return 7;
-  const n = parseInt(val, 10);
-  if (Number.isNaN(n)) return 7;
-  if (val.trim().toLowerCase().endsWith('h')) return Math.max(1, Math.round(n / 24));
-  return Math.max(1, n);
-}
-
-function isoDaysFromNow(days: number, from = new Date()): string {
-  return new Date(from.getTime() + days * 86_400_000).toISOString();
-}
-
-/**
- * Builds the upstream query.
- *
- * Two translations matter:
- *  - `closingWithin` does not exist upstream (verified ignored), so it becomes a
- *    `closingAfter`/`closingBefore` bracket around now.
- *  - `sort=closing` is ascending over ALL tenders including long-closed ones,
- *    so a closing-soon request must also push `closingAfter=now` or the first
- *    page is nothing but expired records.
- */
-export function buildApiQuery(opts: ListOptions, now = new Date()): ApiTenderQuery {
-  const query: ApiTenderQuery = {
-    page: Math.max(1, opts.page ?? 1),
-    limit: opts.limit ?? 20,
-    q: opts.query?.trim() || undefined,
-    category: opts.category || undefined,
-    province: opts.province || undefined,
-    status: opts.status || undefined,
-    sort: SORT_MAP[opts.sort ?? 'newest'],
-  };
-
-  if (opts.closingWithin || opts.sort === 'closing_soon') {
-    const days = closingWithinDays(opts.closingWithin);
-    query.closingAfter = now.toISOString();
-    query.closingBefore = isoDaysFromNow(days, now);
-    query.sort = 'closing';
-  }
-
-  return query;
+  /**
+   * Where a `live` page came from: our server (default) or the browser-direct
+   * fallback in `lib/tender-direct.ts`. Shown in the UI, never assumed.
+   */
+  via?: 'server' | 'browser';
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +174,7 @@ export async function listTenders(opts: ListOptions = {}): Promise<TenderPage> {
   if (FIXTURES_ONLY) return fixturePage(opts);
 
   const query = buildApiQuery(opts);
-  return withFallback(
+  return withFallback<TenderPage>(
     async () => {
       const res = await tenderApiServer.list(query);
       return {
@@ -246,7 +182,8 @@ export async function listTenders(opts: ListOptions = {}): Promise<TenderPage> {
         total: res.total ?? res.results?.length ?? 0,
         page: res.page ?? query.page ?? 1,
         totalPages: res.totalPages ?? 1,
-        source: 'live' as DataSource,
+        source: 'live',
+        via: 'server',
       };
     },
     (e) => (FIXTURES_ALLOWED ? fixturePage(opts, fixtureNotice(e)) : errorPage(opts, e)),
@@ -259,6 +196,7 @@ export type DetailOutcome =
       tender: ReturnType<typeof adaptDetail>;
       source: 'live' | 'fixture';
       notice?: string;
+      via?: 'server' | 'browser';
     }
   | { source: 'error'; notice: string }
   | null;
@@ -267,8 +205,10 @@ export type DetailOutcome =
  * `GET /tenders/:id`.
  *
  * 404 -> null (the page calls `notFound()`). Upstream unreachable -> the
- * captured fixture in dev/test, or `{ source: 'error' }` in production — a
- * service outage must not read as "this tender does not exist".
+ * captured fixture if we hold one, otherwise `{ source: 'error' }` — never a
+ * bare `null`, because in a dev/preview build a missing fixture means nothing
+ * about whether the tender exists. The detail page turns that outcome into a
+ * browser-direct attempt (`lib/tender-direct.ts`) before it shows an outage.
  */
 export async function getTender(id: string): Promise<DetailOutcome> {
   const fromFixtures = (): DetailOutcome => {
@@ -287,13 +227,21 @@ export async function getTender(id: string): Promise<DetailOutcome> {
   try {
     const res = await tenderApiServer.getById(id);
     if (!res?.tender) {
-      return FIXTURES_ALLOWED ? fromFixtures() : { source: 'error', notice: errorNotice() };
+      const local = FIXTURES_ALLOWED ? fromFixtures() : null;
+      return (
+        local ?? {
+          source: 'error',
+          notice: FIXTURES_ALLOWED ? fixtureNotice() : errorNotice(),
+        }
+      );
     }
-    return { tender: adaptDetail(res.tender), source: 'live' };
+    return { tender: adaptDetail(res.tender), source: 'live', via: 'server' };
   } catch (e) {
     if (e instanceof TenderApiError && e.status === 404) return null;
     console.error('[tenders] detail failed:', e instanceof Error ? e.message : e);
-    return FIXTURES_ALLOWED ? fromFixtures() : { source: 'error', notice: errorNotice(e) };
+    const local = FIXTURES_ALLOWED ? fromFixtures() : null;
+    if (local) return local;
+    return { source: 'error', notice: FIXTURES_ALLOWED ? fixtureNotice(e) : errorNotice(e) };
   }
 }
 
@@ -316,6 +264,7 @@ export interface Facets {
   provinces: { name: string; count: number }[];
   source: DataSource;
   notice?: string;
+  via?: 'server' | 'browser';
 }
 
 /** Filter vocabularies for the search UI, with live counts. */
@@ -354,6 +303,7 @@ export async function getFacets(): Promise<Facets> {
 export interface DatasetStats extends ApiStats {
   source: DataSource;
   notice?: string;
+  via?: 'server' | 'browser';
 }
 
 /** Pipeline totals for the dashboard counters. */

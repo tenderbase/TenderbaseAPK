@@ -27,6 +27,7 @@ import { loadPreferences } from '@/lib/preferences';
 import { fetchPreferences } from '@/lib/preferences-remote';
 import { calculateCompleteness } from '@/types/company';
 import { tenderApi } from '@/lib/api';
+import { directFacets, directStats, directTenderPage, shouldUseDirectFallback } from '@/lib/tender-direct';
 import { matchReadiness, scoreTenders, type TenderMatch } from '@/lib/matches';
 import { getStatus, daysUntil } from '@/lib/format';
 import type { DataSource } from '@/lib/tenders';
@@ -80,8 +81,69 @@ export function DashboardView({
   const [ready, setReady] = useState<{ ready: boolean; missing: ('profile' | 'preferences')[] } | null>(null);
   const [selectedMatch, setSelectedMatch] = useState<TenderMatch | null>(null);
 
+  /**
+   * Live data fetched by the BROWSER when the server could not reach the
+   * ingestion API. Dev/preview builds would otherwise show the captured
+   * fixtures and production an outage screen, even though the public,
+   * CORS-open upstream was reachable from the user's own network. Provenance
+   * is reported through `via`, so this is never passed off as a server fetch.
+   */
+  const [direct, setDirect] = useState<{
+    latest: TenderWithUserState[];
+    closingSoon: TenderWithUserState[];
+    stats: { open: number; closing: number };
+    categories: { name: string; count: number }[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!shouldUseDirectFallback(source)) {
+      setDirect(null);
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const [latestPage, closingPage, totals, facets] = await Promise.all([
+          directTenderPage({ sort: 'newest', limit: latest.length || 8 }),
+          directTenderPage({ closingWithin: '7d', sort: 'closing_soon', limit: closingSoon.length || 6 }),
+          directStats(),
+          directFacets(),
+        ]);
+        if (cancelled) return;
+        setDirect({
+          latest: latestPage.results,
+          closingSoon: closingPage.results,
+          stats: {
+            open: totals.activeTenders,
+            closing: closingPage.total || totals.expiringSoonTenders,
+          },
+          categories: facets.categories.slice(0, 6).map((c) => ({ name: c.name, count: c.count })),
+        });
+      } catch (e) {
+        if (!cancelled) {
+          console.warn(
+            '[dashboard] browser-direct tender fallback failed:',
+            e instanceof Error ? e.message : e,
+          );
+        }
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [source, latest.length, closingSoon.length]);
+
+  // Effective values: browser-direct rows when we have them, server props else.
+  const shownLatest = direct?.latest ?? latest;
+  const shownClosingSoon = direct?.closingSoon ?? closingSoon;
+  const shownStats = direct?.stats ?? stats;
+  const shownCategories = direct && direct.categories.length > 0 ? direct.categories : guestCategories;
+  const shownSource: DataSource = direct ? 'live' : source;
+  const shownNotice = direct ? undefined : notice;
+
   const signedIn = session.signedIn;
-  const errored = source === 'error';
+  const errored = !direct && source === 'error';
   const firstName = session.name ? firstNameOf(session.name) : null;
   const withSaved = (t: TenderWithUserState) => ({ ...t, isSaved: isSaved(t.id) });
 
@@ -198,7 +260,7 @@ export function DashboardView({
       </header>
 
       <div className="px-5 pt-4">
-        <DataSourceNotice source={source} notice={notice} />
+        <DataSourceNotice source={shownSource} notice={shownNotice} via={direct ? 'browser' : undefined} />
 
         {errored ? (
           <div className="flex flex-col items-center rounded-lg border border-dashed border-line bg-white px-5 py-8 text-center">
@@ -219,11 +281,11 @@ export function DashboardView({
           </div>
         ) : !signedIn ? (
           <GuestHome
-            stats={stats}
-            latest={latest}
-            closingSoon={closingSoon}
-            source={source}
-            guestCategories={guestCategories}
+            stats={shownStats}
+            latest={shownLatest}
+            closingSoon={shownClosingSoon}
+            source={shownSource}
+            guestCategories={shownCategories}
             withSaved={withSaved}
             onToggleSave={(t) => toggleSaved(t)}
           />
@@ -240,7 +302,7 @@ export function DashboardView({
               <span className="min-w-0 flex-1">
                 <span className="block text-meta font-semibold text-navy">Your weekly briefing</span>
                 <span className="mt-px block truncate text-[11.5px] text-ink-2">
-                  {stats.open.toLocaleString('en-ZA')} open · {stats.closing} closing this week ·{' '}
+                  {shownStats.open.toLocaleString('en-ZA')} open · {shownStats.closing} closing this week ·{' '}
                   {savedCount} saved{matches ? ` · ${matches.length} matching now` : ''}
                 </span>
               </span>
@@ -356,7 +418,7 @@ export function DashboardView({
             )}
 
             {/* The catalogue keeps working for signed-in users too */}
-            {closingSoon.length > 0 && (
+            {shownClosingSoon.length > 0 && (
               <>
                 <div className="mt-5">
                   <SectionHeader
@@ -366,7 +428,7 @@ export function DashboardView({
                   />
                 </div>
                 <div className="space-y-2.5 md:grid md:grid-cols-2 md:gap-2.5 md:space-y-0">
-                  {closingSoon.slice(0, 4).map((t) => (
+                  {shownClosingSoon.slice(0, 4).map((t) => (
                     <CompactTenderCard key={t.id} tender={t} />
                   ))}
                 </div>
@@ -376,7 +438,7 @@ export function DashboardView({
             <div className="mt-5">
               <SectionHeader title="Latest opportunities" action="See all" onAction={() => router.push('/search')} />
             </div>
-            {latest.length === 0 ? (
+            {shownLatest.length === 0 ? (
               <EmptyState
                 icon={Inbox}
                 title="No tenders available"
@@ -384,13 +446,13 @@ export function DashboardView({
               />
             ) : (
               <div className="space-y-3 md:grid md:grid-cols-2 md:gap-3 md:space-y-0">
-                {latest.slice(0, 4).map((t) => (
+                {shownLatest.slice(0, 4).map((t) => (
                   <TenderCard key={t.id} tender={withSaved(t)} onToggleSave={() => toggleSaved(t)} />
                 ))}
               </div>
             )}
 
-            <LiveDataFooter source={source} total={stats.open} />
+            <LiveDataFooter source={shownSource} total={shownStats.open} />
           </>
         )}
       </div>

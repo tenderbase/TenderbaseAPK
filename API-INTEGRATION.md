@@ -308,10 +308,45 @@ behave offline.
 | Network error / DNS / no egress | Fixtures + "Could not reach the tender service. Showing 8 tenders captured from the live API on 2026-09-08." |
 | Cold start / timeout (>20s) | Fixtures + "The tender service is still waking up…" |
 | 400 invalid query | Fixtures + the upstream `issues[]` verbatim, so the bug is visible |
-| 404 on detail | Real Next.js `notFound()` → 404 page |
+| 404 on detail | Real Next.js `notFound()` → 404 page (upstream was reachable, so the answer is trusted) |
 | `TENDERBASE_FIXTURES_ONLY=true` | Fixtures immediately, no network attempt |
+| Any of the above, but the **browser** can reach the API | Live rows, labelled "fetched directly from the tender service in your browser" (see §5.1) |
 
 Responses are cached with ISR (`revalidate: 300`; categories/provinces `86400`).
+
+### 5.1 Browser-direct fallback
+
+A fixture or outage state means *our server* could not reach the API — it does
+not mean the API is down, and on some networks it is not even our server's
+network that matters: sandboxed preview hosts and corporate proxies allowlist
+egress per host, while the end user's browser can reach anything.
+
+The ingestion API is public, keyless and sends `Access-Control-Allow-Origin: *`,
+so when the server answer is `fixture` or `error` the app retries the **same
+query** from the browser against `NEXT_PUBLIC_TENDERBASE_API_URL` (defaults to
+`TENDERBASE_API_URL`):
+
+- `lib/tender-query.ts` — the query translation both paths share, so the retry
+  asks for exactly what the server would have asked for. A test asserts the two
+  URLs are identical in shape.
+- `lib/tender-direct.ts` — the browser client. 15s timeout (shorter than the
+  server's 20s, so the waits are not stacked), no credentials, failures mapped
+  to `UPSTREAM_TIMEOUT` / `NETWORK_ERROR` / `HTTP_ERROR`.
+- `lib/api.ts` — transparent retry for client-side callers (`tenderApi.list`,
+  `getById`, `facets`, `stats`). If the retry fails, the server's original
+  answer is returned unchanged: an outage is never dressed up as success.
+- Dashboard, search and the tender detail page resolve their server-rendered
+  props the same way. Detail is the important one: without it, every row from a
+  browser-fetched list would 404, because the server holds no copy of that id.
+
+Provenance travels with the data (`via: 'browser'`), and `DataSourceNotice`
+renders an informational line instead of staying silent — live data must never
+be silently relabelled, and the direct path must never be mistaken for a
+server fetch. Disable with `NEXT_PUBLIC_TENDERBASE_DIRECT_FALLBACK=false`.
+
+This is a fallback, not the primary path: when the server can reach the API
+(normal deployments) nothing changes, ISR still does the caching, and the
+browser makes no extra request.
 
 Refresh the captures after an upstream change:
 
@@ -329,7 +364,7 @@ curl -s "$BASE/stats"             > /tmp/stats.json
 ## 6. Verifying
 
 ```bash
-npm test          # 133 tests
+npm test          # 245 tests
 npm run typecheck
 npm run build
 ./smoke-test.sh   # route + integration assertions against a running server
