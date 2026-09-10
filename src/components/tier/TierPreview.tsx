@@ -8,18 +8,12 @@ import { cn } from '@/lib/cn';
 
 const ORDER: Tier[] = ['free', 'basic', 'pro'];
 
-/**
- * Dev-only tier preview switcher (blueprint: "stubbed Basic/Pro toggle in dev
- * for previewing both"). Hard-gated on NODE_ENV !== 'production' the same way
- * the auth bypass is — it never ships in a production build, because the
- * bundler replaces NODE_ENV at build time.
- */
+/** Dev-only tier preview switcher for previewing plan states. */
 export function TierPreview() {
-  const { tier, setTier, trial, startTrial, billingEnforced } = useTier();
+  const { tier, setTier, billingEnforced } = useTier();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Close on outside tap.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -43,8 +37,7 @@ export function TierPreview() {
           </div>
           {billingEnforced && (
             <p className="border-b border-line bg-pro-soft/40 px-3 py-2 text-[11px] leading-[15px] text-ink-2">
-              Entitlements are server-verified on this deployment — change plan from the Pro
-              screen instead of this switcher.
+              Entitlements are server-verified on this deployment — change plan from the Pro screen instead of this switcher.
             </p>
           )}
           {ORDER.map((t) => (
@@ -62,29 +55,10 @@ export function TierPreview() {
                 billingEnforced && 'cursor-not-allowed opacity-50',
               )}
             >
-              <span>
-                {TIER_META[t].label}
-                {t === 'pro' && trial.active && (
-                  <span className="ml-1.5 text-[11px] font-semibold text-soon">trial</span>
-                )}
-              </span>
+              <span>{TIER_META[t].label}</span>
               {t === tier && <Check size={15} strokeWidth={2.4} aria-hidden />}
             </button>
           ))}
-          <div className="border-t border-line p-2">
-            {!billingEnforced && (
-              <button
-                type="button"
-                onClick={() => {
-                  startTrial();
-                  setOpen(false);
-                }}
-                className="w-full rounded-md bg-pro px-2 py-1.5 text-[12.5px] font-bold text-[#3d3205]"
-              >
-                Start 14-day trial
-              </button>
-            )}
-          </div>
         </div>
       )}
       <button
@@ -95,8 +69,7 @@ export function TierPreview() {
         className="flex h-9 items-center gap-1.5 rounded-full border border-dashed border-blue bg-white px-3 text-[12px] font-bold text-blue shadow-card-sm"
       >
         <FlaskConical size={13} strokeWidth={2.2} aria-hidden />
-        {tier === 'pro' ? 'PRO' : TIER_META[tier].label}
-        {tier === 'pro' && trial.active ? ` · ${trial.daysLeft}d` : ''}
+        {TIER_META[tier].label}
       </button>
     </div>
   );
