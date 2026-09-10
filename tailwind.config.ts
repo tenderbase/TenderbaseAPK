@@ -1,92 +1,45 @@
 import type { Config } from 'tailwindcss';
 
-/**
- * TenderBase design tokens — premium v2.
- *
- * Colour communicates STATUS and TIER, never decoration:
- *   navy   → brand / primary actions
- *   blue   → links, info, AI accents
- *   signal → live / opportunity / positive (emerald)
- *   amber  → approaching deadline (soon)
- *   red    → urgent / expired (urgent)
- *   pro    → PRO tier & money moments ONLY (gold) — nothing else uses gold
- * Dark mode ships on the same semantic tokens (CSS variables map in globals).
- */
+/** TenderBase visual system — one restrained language across web + Capacitor. */
 const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
   darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        navy: {
-          DEFAULT: '#0F2A47',
-          900: '#0A1F36',
-          700: '#173C63',
-        },
-        blue: {
-          DEFAULT: '#2E6BA8',
-          soft: '#EAF1F9',
-          line: '#C3D7EC',
-        },
-        ink: {
-          DEFAULT: '#1B2430',
-          2: '#4A5568',
-          3: '#7C8798',
-        },
-        line: '#E6EAF0',
-        canvas: '#F5F7FA',
-        open: { DEFAULT: '#12805C', bg: '#E6F4EF' },
-        soon: { DEFAULT: '#B36A00', bg: '#FDF1E0' },
-        urgent: { DEFAULT: '#C02B2B', bg: '#FCEBEB' },
-        signal: { DEFAULT: '#0E9F6E', bg: '#E3F6EF', line: '#BFEBDC' },
-        pro: { DEFAULT: '#C9A227', soft: '#FAF3DC', line: '#EDE1AE' },
-        ai: { DEFAULT: '#4A55B8', bg: '#EEEFFA', line: '#D3D7F0' },
+        navy: { DEFAULT: '#0B1F33', 900: '#071522', 800: '#0A1A2B', 700: '#123654', 600: '#1B4B73' },
+        blue: { DEFAULT: '#2F6BFF', soft: '#EEF3FF', line: '#D7E2FF', deep: '#2457D6' },
+        ink: { DEFAULT: '#142033', 2: '#536176', 3: '#8793A5', 4: '#AAB4C2' },
+        line: '#E5EAF0', canvas: '#F6F8FB', surface: '#FFFFFF',
+        open: { DEFAULT: '#118A63', bg: '#E8F7F1' },
+        soon: { DEFAULT: '#B66A00', bg: '#FFF4E3' },
+        urgent: { DEFAULT: '#C93636', bg: '#FDECEC' },
+        signal: { DEFAULT: '#10A875', bg: '#E5F8F1', line: '#C1EBDD' },
+        pro: { DEFAULT: '#C8A13A', soft: '#FBF5E4', line: '#E9DDAE' },
+        ai: { DEFAULT: '#5966D8', bg: '#F0F1FF', line: '#DADDF7' },
       },
-      borderRadius: {
-        // 4-step premium scale: 8 → 12 → 16 → 20
-        xs: '6px',
-        sm: '8px',
-        md: '12px',
-        lg: '16px',
-        xl: '20px',
-        '2xl': '24px',
-      },
+      borderRadius: { xs: '6px', sm: '8px', md: '12px', lg: '16px', xl: '20px', '2xl': '24px', '3xl': '28px' },
       fontSize: {
-        micro: ['11px', { lineHeight: '15px' }],
-        caption: ['12px', { lineHeight: '17px' }],
-        meta: ['13px', { lineHeight: '19px' }],
-        body: ['14px', { lineHeight: '21px' }],
-        'body-lg': ['15px', { lineHeight: '22px' }],
-        'card-title': ['16px', { lineHeight: '21px' }],
-        section: ['17px', { lineHeight: '23px' }],
-        h2: ['23px', { lineHeight: '29px' }],
-        h1: ['29px', { lineHeight: '35px' }],
+        micro: ['11px', { lineHeight: '15px' }], caption: ['12px', { lineHeight: '17px' }],
+        meta: ['13px', { lineHeight: '19px' }], body: ['14px', { lineHeight: '21px' }],
+        'body-lg': ['15px', { lineHeight: '23px' }], 'card-title': ['16px', { lineHeight: '21px' }],
+        section: ['17px', { lineHeight: '23px' }], h2: ['23px', { lineHeight: '29px', letterSpacing: '-0.02em' }],
+        h1: ['29px', { lineHeight: '35px', letterSpacing: '-0.03em' }], display: ['36px', { lineHeight: '41px', letterSpacing: '-0.045em' }],
       },
       boxShadow: {
-        card: '0 1px 2px rgba(16,32,54,.05), 0 6px 16px rgba(16,32,54,.06)',
-        'card-sm': '0 1px 2px rgba(16,32,54,.06)',
-        nav: '0 -4px 20px rgba(16,32,54,.05)',
-        primary: '0 6px 16px rgba(15,42,71,.22)',
-        'primary-sm': '0 2px 6px rgba(15,42,71,.18)',
-        sheet: '0 -8px 32px rgba(16,32,54,.14)',
-        'gold-glow': '0 4px 14px rgba(201,162,39,.32)',
+        card: '0 1px 2px rgba(15,31,52,.04), 0 8px 24px rgba(15,31,52,.055)',
+        'card-sm': '0 1px 3px rgba(15,31,52,.055)', nav: '0 -8px 28px rgba(15,31,52,.07)',
+        primary: '0 8px 20px rgba(47,107,255,.22)', 'primary-sm': '0 3px 10px rgba(47,107,255,.16)',
+        sheet: '0 -12px 36px rgba(15,31,52,.14)', floating: '0 12px 32px rgba(15,31,52,.13)',
+        'gold-glow': '0 5px 18px rgba(200,161,58,.24)',
       },
-      fontFamily: {
-        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
-      },
+      fontFamily: { sans: ['Poppins', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'] },
       keyframes: {
-        'fade-in-up': {
-          '0%': { opacity: '0', transform: 'translateY(6px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        shimmer: {
-          '100%': { transform: 'translateX(100%)' },
-        },
+        'fade-in-up': { '0%': { opacity: '0', transform: 'translateY(6px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+        'soft-scale': { '0%': { opacity: '0', transform: 'scale(.985)' }, '100%': { opacity: '1', transform: 'scale(1)' } },
+        shimmer: { '100%': { transform: 'translateX(100%)' } },
       },
-      animation: {
-        'fade-in-up': 'fade-in-up .28s ease-out both',
-        shimmer: 'shimmer 1.4s infinite',
-      },
+      animation: { 'fade-in-up': 'fade-in-up .28s ease-out both', 'soft-scale': 'soft-scale .22s ease-out both', shimmer: 'shimmer 1.4s infinite' },
     },
   },
   plugins: [],
