@@ -8,35 +8,40 @@ services:
     runtime: node
     plan: free # change to a paid plan (e.g. starter) in the dashboard to avoid 15-min sleep
     region: oregon # nearest decent region to users; any region works
-    buildCommand: npm run build
+    buildCommand: npm install && npm run build
     startCommand: npm start # start script already honours Render's $PORT
     healthCheckPath: /login # "/" 307-redirects for signed-out users; /login returns 200
     autoDeploy: true
     envVars:
-      # --- Tender API (upstream on Render free tier; the app's 45s timeout +
-      # "waking up" fallback handles its cold starts) ---
+      # --- TenderBase Ingestion API ---
+      # Public and keyless, so nothing here is a secret. It is also the
+      # built-in default in src/lib/tender-api.server.ts; declared explicitly
+      # so the deployment states where its data comes from.
+      # Upstream is on Render's free tier and cold-starts: the app allows 20s
+      # then falls back to the captured fixtures, labelled as such in the UI.
       - key: TENDERBASE_API_URL
-        value: https://tenderbase-api.onrender.com/api/v1
-      - key: TENDERBASE_API_KEY
-        sync: false
-        required: true
+        value: https://tenderbase-api-rqrh.onrender.com
       - key: TENDERBASE_ADMIN_SECRET
         sync: false
         required: false
-      # --- Google Gemini (server-side AI; free tier ~20 req/day, results are
-      # cached on the service's local disk until the next redeploy) ---
-      - key: GEMINI_API_KEY
-        sync: false
-        required: true
-      - key: GEMINI_MODEL
-        value: gemini-2.5-flash
-      # --- Supabase (auth + saved tenders + preferences; anon key is safe
-      # to expose to the browser, constrained by RLS) ---
+      # --- Supabase Auth ---
       - key: NEXT_PUBLIC_SUPABASE_URL
         sync: false
         required: true
       - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
         sync: false
         required: true
+      # --- PayFast billing ---
+      # The exact origin customers use. PayFast's return/cancel/notify URLs are
+      # built from this and signed with it, never from the request Host header
+      # (see src/lib/billing-request.ts). Leave the billing routes unconfigured
+      # until this is set: they answer an honest 503 without it.
+      - key: NEXT_PUBLIC_SITE_URL
+        sync: false
+        required: true
+      # Only needed when one deployment must answer on more than one host.
+      - key: TENDERBASE_ALLOWED_HOSTS
+        sync: false
+        required: false
       # NOTE: do NOT set NEXT_PUBLIC_DEV_AUTH_BYPASS — dev-gated, and the
       # deployed app must use real Supabase auth.

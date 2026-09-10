@@ -23,11 +23,10 @@ src/
 │  └─ (app)/                  authenticated shell (tab bar / sidebar)
 │     ├─ page.tsx             dashboard
 │     ├─ search/ saved/ alerts/ profile/ briefing/
-│     └─ tenders/[id]/        detail → summary · match
+│     └─ tenders/[id]/        detail
 ├─ components/
 │  ├─ ui/                     design-system primitives
 │  ├─ tender/                 TenderCard, CompactTenderCard
-│  ├─ ai/                     MatchBadge, Citation, AiBadge, AiDisclaimer
 │  └─ nav/                    BottomNavigation
 ├─ lib/                       cn · format · api · supabase · mock-data
 └─ types/tender.ts            the API contract
@@ -46,52 +45,65 @@ Colour communicates **status**, not decoration:
 | `open` (green) | accepting submissions |
 | `soon` (amber) | closing within 7 days |
 | `urgent` (red) | closing within 2 days / expired |
-| `ai` (indigo) | **AI-generated content only** — never a status |
-
-The indigo/status separation is load-bearing: a user must always be able to
-tell a generated score from a factual deadline.
 
 ### Status is derived, never stored
 
-`getStatus()` in `lib/format.ts` computes status from `closingDate` alone, so
-the badge, the deadline pill and the accent bar can never disagree with each
-other or go stale in cache.
+`getStatus()` in `lib/format.ts` computes status from `closingDate`, so the
+badge, the deadline pill and the accent bar can never disagree with each other
+or go stale in cache. The one override is an upstream `cancelled` lifecycle,
+which outranks the date: see `API-INTEGRATION.md` §4.9.
 
 ---
 
 ## Data layer
 
-`types/tender.ts` is the single source of truth. Note:
+Tenders come from the **TenderBase Ingestion API**
+(`https://tenderbase-api-rqrh.onrender.com`) — a public, keyless service over
+the National Treasury eTenders OCDS feed. See `API-INTEGRATION.md` for the full
+contract, which was established by probing the live service because its
+`/docs/json` ships an empty `paths: {}`.
+
+```
+src/lib/tender-api.server.ts   HTTP, timeouts, ISR, typed errors   (server-only)
+src/lib/adapt.ts               upstream -> domain model            (pure)
+src/lib/tenders.ts             what screens call, + offline fallback
+src/lib/fixtures/tender-api.ts verbatim captures used offline and by tests
+```
+
+`types/tender.ts` is the domain model and the single source of truth for
+components. `types/api.ts` is the wire contract; **nothing outside `adapt.ts`
+may import it**. That boundary is what stops upstream churn from rippling
+through thirty components.
+
+Things worth knowing:
 
 - **`valueCents: number | null`** — integer cents avoids float rounding on
-  currency; `null` means the organisation withheld the value (common in SA
-  tenders) and renders as "Not disclosed", never "R0".
-- **`TenderWithUserState`** extends `Tender` with `isSaved` / `matchScore`, so
-  unauthenticated endpoints can return the base type safely.
-- **`matchScore: number | null`** — `null` when the user has AI disabled, which
-  makes every match badge disappear automatically.
+  currency; `null` means the value was withheld and renders as "Not disclosed",
+  never "R0". The feed carries no money at all, so it is always `null` and
+  nothing fabricates one.
+- **Two taxonomies.** Upstream publishes 62 categories; the design system has 13
+  badge groups. `category` is the mapped group, `categoryRaw` the verbatim
+  upstream name — which is what `?category=` filters on. Sending a group name
+  matches zero rows.
+- **Exact names, not slugs.** `province` and `category` are matched verbatim
+  (`KwaZulu-Natal`, not `kwazulu-natal`). The API silently ignores unknown
+  params, so a wrong value returns the *entire unfiltered dataset* rather than
+  erroring.
+- **Status is derived, with one override.** `getStatus()` computes from
+  `closingDate`, except that an upstream `cancelled` lifecycle wins — a
+  cancelled tender with a future closing date must not read as "Open".
+- **`TenderWithUserState`** extends `Tender` with `isSaved`, so unauthenticated
+  endpoints can return the base type safely. Upstream always says
+  `isSaved: false`; the Supabase layer overrides it.
 
 `lib/api.ts` calls Next route handlers under `/api/*` rather than the upstream
-API directly, keeping `TENDERBASE_API_KEY` and `AI_PROVIDER_API_KEY` off the
-device. Components currently read `lib/mock-data.ts`; swapping in `tenderApi`
-requires no prop changes.
+directly. When the service is unreachable the app falls back to real captured
+payloads and **says so** via `DataSourceNotice` — never presented as live.
 
----
-
-## AI principles
-
-Every AI feature is retrieval over data TenderBase already holds — tender
-documents, the user's company profile, saved history. No feature invents facts.
-
-1. **Citations are mandatory.** `TenderSummary.keyPoints[].citationIndex` maps
-   into `citations[]`, which resolves to a document and page range. The
-   "show sources" setting is locked on.
-2. **Match scores are a transparent rubric,** not a black box —
-   `MatchExplanation.factors[]` renders as the visible breakdown.
-3. **Smart search resolves to real filters** the user can see and edit, so it
-   degrades gracefully to the normal search API.
-4. **`<AiDisclaimer />` is a component,** so the wording can't drift between
-   screens.
+Pro entitlement is a server fact, not a client preference: it is derived from
+the account's `billing_subscriptions` row (or an unexpired trial on it) and the
+browser cannot grant it. PayFast checkout, trials, cancellation and the
+first-run plan choice are documented in `BILLING-ONBOARDING.md`.
 
 ---
 
@@ -121,5 +133,7 @@ insets and `maximumScale: 1` are already handled for the webview.
 
 - Touch targets ≥44px; bookmark buttons carry the tender title in their label.
 - Tab bar uses `aria-current="page"`; tabs/toggles expose `aria-pressed`/`aria-selected`.
-- Status is never conveyed by colour alone — every badge has a text label.
+- Status is never conveyed by colour alone — every badge has a text label, and
+  `cancelled` is distinct from `closed` because the two mean different things to
+  a bidder.
 - Tender titles wrap rather than truncate.

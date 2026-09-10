@@ -6,6 +6,9 @@ const STATUS_STYLES: Record<TenderStatus, { label: string; className: string; do
   closing_soon: { label: 'Closing Soon', className: 'bg-soon-bg text-soon',     dot: false },
   urgent:       { label: 'Urgent',       className: 'bg-urgent-bg text-urgent', dot: false },
   closed:       { label: 'Closed',       className: 'bg-canvas text-ink-3',     dot: false },
+  // Upstream can cancel a tender whose closing date is still in the future.
+  // Distinct from 'closed' on purpose: a cancelled tender was never awarded.
+  cancelled:    { label: 'Cancelled',    className: 'bg-urgent-bg text-urgent', dot: false },
 };
 
 export function StatusBadge({ status, className }: { status: TenderStatus; className?: string }) {

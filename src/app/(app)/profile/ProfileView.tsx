@@ -1,21 +1,45 @@
 'use client';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { SignOutButton } from '@/components/auth/SignOutButton';
 import {
-  Building2, SlidersHorizontal, Bookmark, Crown, Bell, Mail,
-  HelpCircle, ShieldCheck, Info, LogOut, Settings, ChevronRight, Sparkles,
+  Building2, SlidersHorizontal, Bookmark, Crown, Bell,
+  HelpCircle, ShieldCheck, Info, LogIn, ChevronRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { MenuButton } from '@/components/nav/MenuButton';
+import { useSavedTenders } from '@/lib/saved-store';
+import { useSavedSearches } from '@/lib/saved-searches-store';
+import { useTier } from '@/lib/tier-store';
+import { PlanChip } from '@/components/ui/PlanChip';
+import { loadPreferences } from '@/lib/preferences';
+import { fetchPreferences } from '@/lib/preferences-remote';
+import { loadProfile } from '@/lib/company';
+import { fetchProfile } from '@/lib/company-remote';
+import { calculateCompleteness } from '@/types/company';
 
 function Row({
-  icon: Icon, title, sub, href = '#', danger, right,
+  icon: Icon,
+  title,
+  sub,
+  href,
+  soon,
+  danger,
+  right,
 }: {
-  icon: LucideIcon; title: string; sub?: string; href?: string; danger?: boolean; right?: React.ReactNode;
+  icon: LucideIcon;
+  title: string;
+  sub?: string;
+  href?: string;
+  /** Not built yet — shown, labelled, and NOT clickable. No dead links. */
+  soon?: boolean;
+  danger?: boolean;
+  right?: React.ReactNode;
 }) {
-  return (
-    <Link href={href} className="flex items-center gap-3 py-2.5">
+  const visual = (
+    <>
       <span
         className={cn(
           'flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px]',
@@ -30,7 +54,26 @@ function Row({
         </span>
         {sub && <span className="mt-px block text-caption text-ink-3">{sub}</span>}
       </span>
-      {right ?? <ChevronRight size={17} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />}
+      {soon ? (
+        <span className="shrink-0 rounded-md bg-canvas px-1.5 py-0.5 text-[10px] font-semibold text-ink-3">
+          Soon
+        </span>
+      ) : (
+        (right ?? <ChevronRight size={17} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />)
+      )}
+    </>
+  );
+
+  if (soon || !href) {
+    return (
+      <div aria-disabled={soon || undefined} className={cn('flex items-center gap-3 py-2.5', soon && 'opacity-45')}>
+        {visual}
+      </div>
+    );
+  }
+  return (
+    <Link href={href} className="flex items-center gap-3 py-2.5">
+      {visual}
     </Link>
   );
 }
@@ -54,16 +97,50 @@ export interface ProfileIdentity {
 }
 
 export default function ProfileView({ identity }: { identity: ProfileIdentity }) {
+  const router = useRouter();
+  const { session, count: savedCount } = useSavedTenders();
+  const searches = useSavedSearches();
+  const { tier, trial } = useTier();
+  const [categoryCount, setCategoryCount] = useState(0);
+  const [companyName, setCompanyName] = useState<string | null>(null);
+  const [profilePct, setProfilePct] = useState(0);
+
+  // Real numbers only: categories come from preferences, the company name
+  // and completeness from the company profile. Nothing hardcoded.
+  useEffect(() => {
+    setCategoryCount(loadPreferences().categories.length);
+    const local = loadProfile();
+    setCompanyName(local.legalName?.trim() || null);
+    setProfilePct(local.legalName?.trim() ? calculateCompleteness(local).percent : 0);
+
+    if (session.signedIn) {
+      void fetchPreferences().then((remote) => {
+        if (remote) setCategoryCount(remote.categories.length);
+      });
+      void fetchProfile().then((remote) => {
+        if (!remote) return;
+        if (remote.legalName?.trim()) setCompanyName(remote.legalName.trim());
+        setProfilePct(remote.legalName?.trim() ? calculateCompleteness(remote).percent : 0);
+      });
+    }
+  }, [session.signedIn]);
+
+  const signedIn = session.signedIn;
+
   return (
-    <main>
+    <main className="pb-24">
       <header className="border-b border-line bg-white px-5 pb-3 pt-1.5">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <MenuButton className="md:hidden" />
             <h1 className="text-h2">Profile</h1>
           </div>
-          <Link href="/settings" aria-label="Settings" className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-canvas text-ink">
-            <Settings size={20} strokeWidth={1.75} aria-hidden />
+          <Link
+            href="/profile/preferences"
+            aria-label="Tender preferences"
+            className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-canvas text-ink"
+          >
+            <SlidersHorizontal size={18} strokeWidth={1.75} aria-hidden />
           </Link>
         </div>
 
@@ -78,58 +155,118 @@ export default function ProfileView({ identity }: { identity: ProfileIdentity })
             />
           ) : (
             <div className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-[16px] bg-navy text-[19px] font-semibold text-white">
-              {identity.initials}
+              {signedIn ? (identity.initials || session.initials || 'U') : 'G'}
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <p className="text-[18px] font-bold tracking-[-0.03em]">{identity.name}</p>
-            <p className="mt-0.5 truncate text-meta text-ink-2">{identity.email}</p>
-            <span className="mt-1.5 inline-flex h-[22px] items-center rounded-md bg-blue-soft px-2 text-[11.5px] font-semibold text-blue">
-              Professional Plan
+            <p className="text-[18px] font-bold tracking-[-0.03em]">
+              {signedIn ? identity.name : 'Browse as guest'}
+            </p>
+            <p className="mt-0.5 truncate text-meta text-ink-2">
+              {signedIn ? identity.email : 'Not signed in'}
+            </p>
+            <span className="mt-1.5 inline-flex items-center gap-1.5">
+              <PlanChip tier={tier} />
+              {tier === 'pro' && trial.active && (
+                <span className="text-[11px] font-medium text-soon">
+                  Trial · {trial.daysLeft}d left
+                </span>
+              )}
+              {!signedIn && <span className="text-[11px] text-ink-3">Guest</span>}
             </span>
           </div>
         </div>
 
-        <dl className="mt-3.5 flex rounded-[13px] bg-canvas py-2.5">
-          {[['17', 'Saved'], ['5', 'Categories'], ['3', 'Saved searches']].map(([v, l], i) => (
-            <div key={l} className={cn('flex-1 text-center', i > 0 && 'border-l border-line')}>
-              <dt className="sr-only">{l}</dt>
-              <dd>
-                <span className="block text-[19px] font-bold tracking-[-0.04em]">{v}</span>
-                <span className="mt-0.5 block text-micro text-ink-3">{l}</span>
-              </dd>
-            </div>
-          ))}
-        </dl>
+        {!signedIn && (
+          <button
+            type="button"
+            onClick={() => router.push('/login')}
+            className="mt-3.5 flex h-[46px] w-full items-center justify-center gap-2 rounded-[13px] bg-navy text-body font-semibold text-white"
+          >
+            <LogIn size={17} strokeWidth={2} aria-hidden />
+            Sign in — it&apos;s free
+          </button>
+        )}
+
+        {signedIn && (
+          <dl className="mt-3.5 flex rounded-[13px] bg-canvas py-2.5">
+            {[
+              [session.loading ? '—' : String(savedCount), 'Saved'],
+              [String(categoryCount), 'Categories'],
+              [session.loading ? '—' : String(searches.count), 'Searches'],
+            ].map(([v, l], i) => (
+              <div key={l} className={cn('flex-1 text-center', i > 0 && 'border-l border-line')}>
+                <dt className="sr-only">{l}</dt>
+                <dd>
+                  <span className="block text-[19px] font-bold tracking-[-0.04em]">{v}</span>
+                  <span className="mt-0.5 block text-micro text-ink-3">{l}</span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </header>
 
       <div className="px-5 pt-3.5">
         <Group title="Account">
-          <Row icon={Building2} title="Company Profile" sub="Mkhize Solutions (Pty) Ltd" href="/profile/company" />
-          <Row icon={SlidersHorizontal} title="Tender Preferences" sub="Categories, provinces and alerts" href="/profile/preferences" />
-          <Row icon={Bookmark} title="Saved Searches" sub="3 active" />
-          <Row icon={Crown} title="Subscription & Billing" sub="Professional · Renews 28 Sep" />
-        </Group>
-
-        <Group title="Intelligence">
-          <Row icon={Sparkles} title="AI Features" sub="Summaries, match scores and smart search" />
-          <Row icon={Bell} title="Notification Settings" sub="Push, email and deadline alerts" />
-          <Row icon={Mail} title="Email Digest" sub="Daily at 07:00" />
-        </Group>
-
-        <Group title="Support">
-          <Row icon={HelpCircle} title="Help Centre" />
-          <Row icon={ShieldCheck} title="Privacy & Security" />
           <Row
-            icon={Info}
-            title="About TenderBase"
-            right={<span className="text-caption text-ink-3">v1.4.2</span>}
+            icon={Building2}
+            title="Company Profile"
+            sub={companyName ?? (signedIn ? 'Not set up yet' : 'Set up to match tenders')}
+            href="/profile/company"
+            right={
+              companyName ? (
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <span
+                    className={cn(
+                      'h-2 w-2 rounded-full',
+                      profilePct >= 100 ? 'bg-open' : profilePct >= 60 ? 'bg-soon' : 'bg-urgent',
+                    )}
+                    aria-hidden
+                  />
+                  <span className="text-caption font-semibold tabular-nums text-ink-2">{profilePct}%</span>
+                </span>
+              ) : undefined
+            }
+          />
+          <Row icon={SlidersHorizontal} title="Tender Preferences" sub="Categories, provinces and alerts" href="/profile/preferences" />
+          <Row
+            icon={Bookmark}
+            title="Saved Searches"
+            href="/saved?tab=searches"
+            sub={searches.count > 0 ? `${searches.count} saved — synced to your account` : 'Searches you save on Discover'}
+          />
+          <Row
+            icon={Crown}
+            title="Subscription & Pro"
+            href="/pro"
+            sub={
+              tier === 'pro'
+                ? trial.active
+                  ? `Pro · trial ${trial.daysLeft} day${trial.daysLeft === 1 ? '' : 's'} left`
+                  : 'Pro active — manage plan'
+                : tier === 'basic'
+                  ? 'Upgrade for unlimited AI & matches'
+                  : 'Guest — see what Pro adds'
+            }
           />
         </Group>
 
-        <div className="rounded-[14px] border border-line bg-white px-3.5">
-          <SignOutButton />
-        </div>
+        <Group title="Intelligence">
+          <Row icon={Bell} title="Notification Settings" sub="In-app alerts, push and email" href="/profile/notifications" />
+        </Group>
+
+        <Group title="Support">
+          <Row icon={HelpCircle} title="Help Centre" soon />
+          <Row icon={ShieldCheck} title="Privacy & Security" soon />
+          <Row icon={Info} title="About TenderBase" right={<span className="text-caption text-ink-3">v1.4.2</span>} />
+        </Group>
+
+        {signedIn && (
+          <div className="rounded-[14px] border border-line bg-white px-3.5">
+            <SignOutButton />
+          </div>
+        )}
       </div>
     </main>
   );

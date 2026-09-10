@@ -2,24 +2,44 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, ArrowUpDown, SearchX, Loader2 } from 'lucide-react';
+import { SlidersHorizontal, ArrowUpDown, SearchX, Loader2, CloudOff, BookmarkPlus, Check } from 'lucide-react';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Chip } from '@/components/ui/Chip';
 import { TenderCard } from '@/components/tender/TenderCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { DataSourceNotice } from '@/components/ui/DataSourceNotice';
 import { MenuButton } from '@/components/nav/MenuButton';
+import { cn } from '@/lib/cn';
+import { directTenderPage, shouldUseDirectFallback } from '@/lib/tender-direct';
+import { useSavedTenders } from '@/lib/saved-store';
+import { useSavedSearches } from '@/lib/saved-searches-store';
+import { useTier } from '@/lib/tier-store';
+import { useUpgrade } from '@/components/tier/UpgradeSheet';
+import { paramsFromUrl, hasAny } from '@/lib/saved-searches';
 import type { DataSource } from '@/lib/tenders';
 import type { SortOption, TenderWithUserState } from '@/types/tender';
 
-/** Quick filters map onto real API parameters — none are decorative. */
+/**
+ * Quick filters map onto real API parameters — none are decorative.
+ *
+ * `category` and `province` values are the upstream's VERBATIM display names
+ * from `/categories` and `/provinces`, not slugs. The API matches these exactly
+ * and silently ignores unknown params, so the old slug values ('construction',
+ * 'information-technology', 'kwazulu-natal') did not error — they quietly
+ * returned the entire unfiltered dataset while the chip showed as selected.
+ *
+ * `closingWithin` is our own URL param, translated server-side into the
+ * `closingAfter` / `closingBefore` bracket the API actually validates.
+ */
 const QUICK_FILTERS = [
   { label: 'All', params: {} },
   { label: 'Closing soon', params: { closingWithin: '7d' } },
-  { label: 'This week', params: { sort: 'newest' } },
-  { label: 'Construction', params: { category: 'construction' } },
-  { label: 'IT', params: { category: 'information-technology' } },
-  { label: 'KwaZulu-Natal', params: { province: 'kwazulu-natal' } },
+  { label: 'Newest', params: { sort: 'newest' } },
+  { label: 'Construction', params: { category: 'Construction' } },
+  { label: 'IT & comms', params: { category: 'Information and communication' } },
+  { label: 'Security', params: { category: 'Security and investigation activities' } },
+  { label: 'KwaZulu-Natal', params: { province: 'KwaZulu-Natal' } },
+  { label: 'Gauteng', params: { province: 'Gauteng' } },
 ] as const;
 
 export interface SearchViewProps {
@@ -47,7 +67,21 @@ export function SearchView({
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState(initialQuery);
-  const [saved, setSaved] = useState<Record<string, boolean>>({});
+  const { session, isSaved, toggleSaved } = useSavedTenders();
+  const searches = useSavedSearches();
+  const { limit } = useTier();
+  const { openUpgrade } = useUpgrade();
+
+  // The exact filter state of the current URL — what "Save search" captures.
+  const currentSearch = paramsFromUrl(params);
+  const thisSearchSaved = searches.isSaved(currentSearch);
+  const searchCap = limit('saved-searches') ?? 3;
+
+  /** Clears every filter AND the query state, so the box can't lie about it. */
+  const clearAll = () => {
+    setQuery('');
+    startTransition(() => router.replace('/search', { scroll: false }));
+  };
 
   // Debounced server round-trip: the query runs against all tenders upstream,
   // not just the page currently in memory.
@@ -62,24 +96,94 @@ export function SearchView({
     return () => clearTimeout(id);
   }, [query, initialQuery, params, router]);
 
+  /**
+   * Browser-direct results. The server-rendered `results` are right whenever
+   * the server can reach the ingestion API; when it cannot (dev fixture
+   * fallback, restricted network, upstream timeout) the same query is re-run
+   * from the browser against the public, CORS-open upstream, so a search shows
+   * real tenders instead of a captured snapshot.
+   */
+  const [direct, setDirect] = useState<{
+    results: TenderWithUserState[];
+    total: number;
+    page: number;
+    totalPages: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!shouldUseDirectFallback(source)) {
+      setDirect(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const pageData = await directTenderPage({
+          query: params.get('q') ?? undefined,
+          category: params.get('category') ?? undefined,
+          province: params.get('province') ?? undefined,
+          status: params.get('status') ?? undefined,
+          closingWithin: params.get('closingWithin') ?? undefined,
+          sort: (params.get('sort') as SortOption) || 'newest',
+          page: Number(params.get('page') ?? 1) || 1,
+          limit: 20,
+        });
+        if (cancelled) return;
+        setDirect({
+          results: pageData.results,
+          total: pageData.total,
+          page: pageData.page,
+          totalPages: pageData.totalPages,
+        });
+      } catch (e) {
+        if (!cancelled) {
+          console.warn(
+            '[search] browser-direct tender fallback failed:',
+            e instanceof Error ? e.message : e,
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [source, params]);
+
+  // Browser-direct rows win when present; otherwise the server's answer stands.
+  const shownResults = direct?.results ?? results;
+  const shownTotal = direct?.total ?? total;
+  const shownPage = direct?.page ?? page;
+  const shownTotalPages = direct?.totalPages ?? totalPages;
+  const shownSource: DataSource = direct ? 'live' : source;
+  const shownNotice = direct ? undefined : notice;
+
   const update = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams(params.toString());
     for (const [k, v] of Object.entries(patch)) {
       v ? next.set(k, v) : next.delete(k);
     }
-    next.delete('page');
+    if (!('page' in patch)) {
+      next.delete('page');
+    }
     startTransition(() => router.replace(`/search?${next}`, { scroll: false }));
   };
 
   const activeQuick = (f: (typeof QUICK_FILTERS)[number]) => {
     const entries = Object.entries(f.params);
-    if (entries.length === 0) return !params.get('category') && !params.get('province') && !params.get('closingWithin');
+    if (entries.length === 0) {
+      return (
+        !params.get('category') &&
+        !params.get('province') &&
+        !params.get('closingWithin') &&
+        !params.get('status')
+      );
+    }
     return entries.every(([k, v]) => params.get(k) === v);
   };
 
   const toggleQuick = (f: (typeof QUICK_FILTERS)[number]) => {
     if (Object.keys(f.params).length === 0) {
-      update({ category: undefined, province: undefined, closingWithin: undefined });
+      update({ category: undefined, province: undefined, closingWithin: undefined, status: undefined });
       return;
     }
     const on = activeQuick(f);
@@ -90,11 +194,9 @@ export function SearchView({
     );
   };
 
-  const toggleSave = (id: string) => setSaved((p) => ({ ...p, [id]: !p[id] }));
-
   return (
-    <main>
-      <header className="border-b border-line bg-white px-5 pb-3.5 pt-2">
+    <main className="pb-24">
+      <header className="sticky top-0 z-30 border-b border-line bg-white px-5 pb-3.5 pt-2">
         <div className="mb-3 flex items-center gap-2.5">
           <MenuButton className="md:hidden" />
           <h1 className="text-h2">Find tenders</h1>
@@ -103,6 +205,12 @@ export function SearchView({
           value={query}
           onChange={setQuery}
           onClear={() => setQuery('')}
+          onSubmit={(q) => {
+            const next = new URLSearchParams(params.toString());
+            q ? next.set('q', q) : next.delete('q');
+            next.delete('page');
+            startTransition(() => router.replace(`/search?${next}`, { scroll: false }));
+          }}
           placeholder="Search by keyword, organisation or tender number"
         />
 
@@ -115,13 +223,20 @@ export function SearchView({
             <ArrowUpDown size={15} strokeWidth={2} aria-hidden />
             {activeSort === 'closing_soon' ? 'Closing soon' : 'Newest'}
           </button>
+          {/*
+            Was a `hasDocuments` toggle. The ingestion API has no documents
+            filter and drops the param silently, so the button used to look
+            active while changing nothing. `status=active` is a real filter
+            (verified: 411 -> 396 rows) and is what "hide closed" should do.
+          */}
           <button
             type="button"
-            onClick={() => update({ hasDocuments: params.get('hasDocuments') ? undefined : 'true' })}
+            onClick={() => update({ status: params.get('status') === 'active' ? undefined : 'active' })}
+            aria-pressed={params.get('status') === 'active'}
             className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-[10px] border border-line bg-white text-meta font-medium text-ink"
           >
             <SlidersHorizontal size={15} strokeWidth={2} aria-hidden />
-            {params.get('hasDocuments') ? 'With documents' : 'Filter'}
+            {params.get('status') === 'active' ? 'Open only' : 'Any status'}
           </button>
         </div>
 
@@ -138,64 +253,112 @@ export function SearchView({
       </header>
 
       <div className="px-5 pt-3.5">
-        <DataSourceNotice source={source} notice={notice} />
+        <DataSourceNotice source={shownSource} notice={shownNotice} via={direct ? 'browser' : undefined} />
 
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between gap-3">
           <p className="text-meta text-ink-2">
             {pending ? (
               <span className="flex items-center gap-1.5">
                 <Loader2 size={13} className="animate-spin" aria-hidden /> Searching…
               </span>
+            ) : shownSource === 'error' && shownTotal === 0 ? (
+              'Service unavailable'
             ) : (
               <>
-                <span className="font-semibold text-ink">{total.toLocaleString('en-ZA')}</span>{' '}
-                {total === 1 ? 'tender' : 'tenders'} found
+                <span className="font-semibold text-ink">{shownTotal.toLocaleString('en-ZA')}</span>{' '}
+                {shownTotal === 1 ? 'tender' : 'tenders'} found
               </>
             )}
           </p>
-          {totalPages > 1 && (
-            <span className="text-caption text-ink-3">
-              Page {page} of {totalPages}
-            </span>
-          )}
+          <span className="flex shrink-0 items-center gap-2">
+            {shownTotalPages > 1 && (
+              <span className="hidden text-caption text-ink-3 sm:inline">
+                Page {shownPage} of {shownTotalPages}
+              </span>
+            )}
+            {session.signedIn && hasAny(currentSearch) && (
+              thisSearchSaved ? (
+                <button
+                  type="button"
+                  onClick={() => router.push('/saved?tab=searches')}
+                  className="flex h-8 items-center gap-1.5 rounded-full border border-line bg-white px-3 text-[12px] font-semibold text-navy"
+                >
+                  <Check size={13} strokeWidth={2.6} aria-hidden />
+                  Saved — open
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (searches.count >= searchCap) {
+                      openUpgrade('saved-searches', { why: 'Basic saves up to 3 searches — Pro keeps every filter set you run, ready to re-run.' });
+                      return;
+                    }
+                    searches.add('', currentSearch);
+                  }}
+                  className="flex h-8 items-center gap-1.5 rounded-full border border-line bg-white px-3 text-[12px] font-semibold text-ink-2 transition-colors hover:border-navy hover:text-navy"
+                >
+                  <BookmarkPlus size={13} strokeWidth={2.1} aria-hidden />
+                  Save search
+                </button>
+              )
+            )}
+          </span>
         </div>
 
-        {results.length === 0 && !pending ? (
+        {shownSource === 'error' && shownResults.length === 0 && !pending ? (
+          <div className="flex flex-col items-center rounded-lg border border-dashed border-line bg-white px-5 py-8 text-center">
+            <div className="mb-3.5 flex h-[52px] w-[52px] items-center justify-center rounded-[16px] bg-urgent-bg text-urgent">
+              <CloudOff size={24} strokeWidth={1.7} aria-hidden />
+            </div>
+            <h3 className="text-card-title font-semibold tracking-[-0.02em] text-ink">
+              Tenders are unavailable right now
+            </h3>
+            <p className="mt-1.5 max-w-[260px] text-meta text-ink-2">{notice}</p>
+            <button
+              type="button"
+              onClick={() => router.refresh()}
+              className="mt-4 inline-flex h-11 items-center justify-center rounded-md bg-navy px-4 text-[14px] font-semibold text-white"
+            >
+              Try again
+            </button>
+          </div>
+        ) : shownResults.length === 0 && !pending ? (
           <EmptyState
             icon={SearchX}
             title="No tenders match your search"
-            description="Try a broader keyword, or clear the category and province filters."
-            actionLabel="Clear filters"
-            onAction={() => router.replace('/search')}
+            description="Try a broader keyword, or clear the category, province and status filters."
+            actionLabel="Clear search"
+            onAction={clearAll}
           />
         ) : (
           <div
             className={`space-y-3 md:grid md:grid-cols-2 md:gap-3 md:space-y-0 ${pending ? 'opacity-60' : ''}`}
           >
-            {results.map((t) => (
+            {shownResults.map((t) => (
               <TenderCard
                 key={t.id}
-                tender={{ ...t, isSaved: saved[t.id] ?? t.isSaved }}
-                onToggleSave={toggleSave}
+                tender={{ ...t, isSaved: isSaved(t.id) }}
+                onToggleSave={() => toggleSaved(t)}
               />
             ))}
           </div>
         )}
 
-        {totalPages > 1 && (
+        {shownTotalPages > 1 && (
           <div className="mt-5 flex items-center justify-center gap-2.5">
             <button
               type="button"
-              disabled={page <= 1}
-              onClick={() => update({ page: String(page - 1) })}
+              disabled={shownPage <= 1}
+              onClick={() => update({ page: String(shownPage - 1) })}
               className="h-10 rounded-[10px] border border-line bg-white px-4 text-meta font-medium text-ink disabled:opacity-40"
             >
               Previous
             </button>
             <button
               type="button"
-              disabled={page >= totalPages}
-              onClick={() => update({ page: String(page + 1) })}
+              disabled={shownPage >= shownTotalPages}
+              onClick={() => update({ page: String(shownPage + 1) })}
               className="h-10 rounded-[10px] border border-line bg-white px-4 text-meta font-medium text-ink disabled:opacity-40"
             >
               Next

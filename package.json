@@ -8,8 +8,9 @@
     "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
-    "test": "node --test src/lib/__tests__/*.mjs",
+    "test": "NODE_ENV=test node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --conditions=react-server --import ./src/lib/__tests__/register.mjs --test src/lib/__tests__/*.mjs",
     "verify": "npm run typecheck && npm run test && npm run build",
+    "db:push": "supabase db push",
     "smoke": "./smoke-test.sh",
     "clean": "rm -rf .next"
   },

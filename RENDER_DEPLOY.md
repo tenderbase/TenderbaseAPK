@@ -9,7 +9,7 @@ human are the Render dashboard (GitHub connection) and the secret values.
 
 ## Already done (in the repo)
 
-- `render.yaml` — Render Blueprint: Node runtime, `npm run build`,
+- `render.yaml` — Render Blueprint: Node runtime, `npm install && npm run build`,
   `npm start`, healthcheck `/login`, auto-deploy on push
 - `start` script honours Render's injected `$PORT`
   (`next start -H 0.0.0.0 -p ${PORT:-3000}`)
@@ -32,7 +32,7 @@ Log in at **render.com** (GitHub). Authorize access to
 `arena/01a07c2c-tenderbaseapk` (or `main` once merged).
 
 Render reads `render.yaml` and pre-fills: Node runtime, build
-`npm run build`, start `npm start`, healthcheck `/login`, auto-deploy.
+`npm install && npm run build`, start `npm start`, healthcheck `/login`, auto-deploy.
 
 <details>
 <summary>Prefer not to use a Blueprint?</summary>
@@ -40,7 +40,7 @@ Render reads `render.yaml` and pre-fills: Node runtime, build
 **New → Web Service** → same repo/branch. Render auto-detects Node from
 `package.json`; set manually what the Blueprint would have set:
 
-- Build Command: `npm run build`
+- Build Command: `npm install && npm run build`
 - Start Command: `npm start`
 - Health Check Path: `/login`
 - Instance: free (or a paid plan — see "Gotchas")
@@ -51,18 +51,24 @@ Render reads `render.yaml` and pre-fills: Node runtime, build
 
 | Variable | Source | Required |
 |---|---|---|
-| `TENDERBASE_API_KEY` | your tender API | yes |
+| `TENDERBASE_API_URL` | ingestion API (public, keyless) | no — built-in default |
 | `TENDERBASE_ADMIN_SECRET` | generate your own | no (admin/sync endpoints) |
-| `GEMINI_API_KEY` | aistudio.google.com/apikey | yes |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API | yes |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API | yes |
+| `NEXT_PUBLIC_SITE_URL` | this service's own public origin | only with PayFast billing — see below |
+
+`NEXT_PUBLIC_SITE_URL` is the origin PayFast sends the customer back to and
+posts the ITN to. It is read from configuration and never from the request's
+`Host` header, so a deployment that turns billing on without it gets an honest
+503 from `/api/billing/*` instead of a signed checkout pointed at whatever host
+the caller asked for. Use `TENDERBASE_ALLOWED_HOSTS` (comma-separated) only when
+one deployment must answer on several origins.
 
 Pre-filled by the Blueprint (override in **Environment** if wrong):
 
-- `TENDERBASE_API_URL=https://tenderbase-api.onrender.com/api/v1`
-  (point it at the Railway `tenderbased-production` URL if the API lives
+- `TENDERBASE_API_URL=https://tenderbase-api-rqrh.onrender.com`
+  (the built-in default; override it only if the ingestion service moves
   there instead)
-- `GEMINI_MODEL=gemini-2.5-flash`
 
 **Do not set `NEXT_PUBLIC_DEV_AUTH_BYPASS`.** It is dev-gated and inert in
 production builds, but leave it out.
@@ -120,7 +126,7 @@ Any new Node/Next.js web service can reuse this exact shape:
 2. `start` script bound to `0.0.0.0` and `${PORT:-3000}`
 3. A stable **200** healthcheck endpoint that is *not* a redirect
 4. `render.yaml` entry: `type: web`, `runtime: node`,
-   `buildCommand: npm run build`, `startCommand: npm start`,
+   `buildCommand: npm install && npm run build`, `startCommand: npm start`,
    `healthCheckPath`, `autoDeploy: true`, secrets as `sync: false`
    `envVars`
 5. Secrets in the dashboard, public `NEXT_PUBLIC_*` vars in `envVars`

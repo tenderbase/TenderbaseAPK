@@ -18,6 +18,12 @@ export const PROVINCES = [
 ] as const;
 export type Province = (typeof PROVINCES)[number];
 
+/**
+ * The app's own coarse taxonomy (13 values) used for badges and saved search
+ * preferences. The ingestion API has 62 categories — `deriveCategory()` in
+ * `lib/adapt.ts` maps between the two, and `categoryRaw` keeps the verbatim
+ * upstream value for querying and for the detail screen.
+ */
 export const CATEGORIES = [
   'Construction',
   'IT & Technology',
@@ -36,8 +42,18 @@ export const CATEGORIES = [
 ] as const;
 export type Category = (typeof CATEGORIES)[number];
 
-/** Derived from closingDate — never stored, always computed. */
-export type TenderStatus = 'open' | 'closing_soon' | 'urgent' | 'closed';
+/**
+ * Lifecycle state as the ingestion API reports it. Distinct from
+ * `TenderStatus`, which is the display state derived in `lib/format.ts`.
+ */
+export type LifecycleStatus = 'active' | 'complete' | 'cancelled' | (string & {});
+
+/**
+ * Derived, never stored: computed from `closingDate` by `getStatus()`, except
+ * that a tender the API reports as `cancelled` is cancelled no matter what its
+ * closing date says. Bidders lose real money treating those as "Open".
+ */
+export type TenderStatus = 'open' | 'closing_soon' | 'urgent' | 'closed' | 'cancelled';
 
 export interface TenderDocument {
   id: string;
@@ -64,10 +80,18 @@ export interface Tender {
   title: string;
   description: string;
   organisation: string;
+  /** App taxonomy (13 values), derived from `categoryRaw` by `deriveCategory()`. */
   category: Category;
+  /**
+   * Verbatim upstream category, e.g. 'Supplies: Computer Equipment'. This is
+   * the string `/tenders?category=` filters on — never send `category`.
+   */
+  categoryRaw?: string;
   province: Province;
-  /** Free-text locality, e.g. 'Durban, KwaZulu-Natal' */
+  /** Short locality for cards, e.g. 'Durban, KwaZulu-Natal' */
   location: string;
+  /** Verbatim eTenders address, e.g. '1 Jones Road - Kempton Park - 1632'. */
+  locationFull?: string | null;
   /** Estimated value in ZAR cents. Null when the organisation withholds it. */
   valueCents: number | null;
   publishedDate: string;
@@ -75,57 +99,19 @@ export interface Tender {
   sourceUrl: string | null;
   documents: TenderDocument[];
   contactInformation: ContactInformation | null;
+  /** Upstream lifecycle; absent/unknown means "trust the closing date". */
+  lifecycleStatus?: LifecycleStatus | null;
+  /** CIDB grading (e.g. '1GB') when the organisation published one. */
+  cidbGrade?: string | null;
+  /** When the ingestion pipeline first saw this record. */
+  firstSeenAt?: string | null;
 }
 
 /** A tender enriched with per-user state. Returned by authenticated endpoints. */
 export interface TenderWithUserState extends Tender {
   isSaved: boolean;
   savedAt: string | null;
-  /** 0–100. Present only when AI matching is enabled for the user. */
   matchScore: number | null;
-}
-
-// ---------- AI ----------
-
-export interface AiCitation {
-  /** 1-based marker rendered in the summary text. */
-  index: number;
-  documentId: string;
-  documentName: string;
-  pageRange: string | null;
-}
-
-export interface TenderSummary {
-  tenderId: string;
-  overview: string;
-  keyPoints: { text: string; citationIndex: number | null }[];
-  citations: AiCitation[];
-  generatedAt: string;
-  model: string;
-}
-
-export type MatchFactorKey =
-  | 'category'
-  | 'province'
-  | 'value'
-  | 'compliance'
-  | 'timeToBid';
-
-export interface MatchFactor {
-  key: MatchFactorKey;
-  label: string;
-  /** 0–100 contribution score. */
-  score: number;
-  /** Short human explanation, e.g. 'Exact match'. */
-  note: string;
-}
-
-export interface MatchExplanation {
-  tenderId: string;
-  score: number;
-  factors: MatchFactor[];
-  /** Disqualification risks surfaced before bidding. */
-  warnings: { text: string; citationIndex: number | null }[];
 }
 
 // ---------- search ----------
@@ -145,12 +131,9 @@ export interface TenderFilters {
 export type SortOption =
   | 'closing_soon'
   | 'newest'
-  | 'value_desc'
-  | 'ai_match';
+  | 'value_desc';
 
 export interface SearchResponse {
   results: TenderWithUserState[];
   total: number;
-  /** Filters the AI parsed out of a natural-language query, for display. */
-  interpretedFilters?: TenderFilters;
 }

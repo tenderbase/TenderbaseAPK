@@ -1,28 +1,24 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
-
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'TenderBase — Find the opportunities that matter',
   description:
-    'Discover relevant South African government and private-sector tender opportunities, track closing dates and stay ahead of new opportunities.',
-  manifest: '/manifest.json',
+    'South African tender discovery platform for small contractors and suppliers.',
 };
 
 export const viewport: Viewport = {
-  themeColor: '#0F2A47',
   width: 'device-width',
   initialScale: 1,
-  // Prevents zoom-on-input jitter inside the Capacitor webview.
   maximumScale: 1,
+  userScalable: false,
   viewportFit: 'cover',
+  themeColor: '#0F182B',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-ZA" className={inter.variable}>
+    <html lang="en-ZA">
       <body>{children}</body>
     </html>
   );

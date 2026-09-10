@@ -17,6 +17,7 @@ export default async function SearchPage({ searchParams }: { searchParams: SP })
     query: q || undefined,
     category: one(searchParams.category),
     province: one(searchParams.province),
+    status: one(searchParams.status),
     closingWithin: one(searchParams.closingWithin),
     sort,
     page,

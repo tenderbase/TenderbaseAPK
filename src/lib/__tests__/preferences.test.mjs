@@ -44,9 +44,10 @@ const preferencesEqual = (a, b) => {
 
 const toQueryParams = (p) => {
   const q = {};
-  if (p.categories.length === 1) q.category = p.categories[0];
   if (p.provinces.length === 1 && !p.includeNational) q.province = p.provinces[0];
-  if (p.requireDocuments) q.has_documents = 'true';
+  if (p.minDaysToClose > 0) {
+    q.closingAfter = new Date(Date.now() + p.minDaysToClose * 86400000).toISOString();
+  }
   return q;
 };
 
@@ -105,8 +106,12 @@ test('adding a category is detected', () => {
 });
 
 // --- API params ---
-test('a single category is pushed to the API', () => {
-  assert.deepEqual(toQueryParams({ ...DEFAULTS, categories: ['Security'] }).category, 'Security');
+test('an app category is never pushed to the API', () => {
+  // Our 13-value taxonomy is a GROUPING of the upstream's 62 categories.
+  // /tenders accepts one verbatim name and silently ignores unknown params, so
+  // sending 'Security' would match zero rows while looking like it worked.
+  assert.equal(toQueryParams({ ...DEFAULTS, categories: ['Security'] }).category, undefined);
+  assert.equal(toQueryParams({ ...DEFAULTS, categories: ['Construction'] }).category, undefined);
 });
 test('multi-select is filtered client-side, not sent as a single param', () => {
   // Sending one of two would silently drop the other.
@@ -117,8 +122,20 @@ test('province is only sent when national tenders are excluded', () => {
   assert.equal(
     toQueryParams({ ...DEFAULTS, includeNational: false }).province, 'KwaZulu-Natal');
 });
-test('requireDocuments maps to the has_documents param', () => {
-  assert.equal(toQueryParams({ ...DEFAULTS, requireDocuments: true }).has_documents, 'true');
+test('requireDocuments is not sent — the API has no documents filter', () => {
+  // has_documents belonged to the retired service; this one ignores it.
+  const q = toQueryParams({ ...DEFAULTS, requireDocuments: true });
+  assert.equal(q.has_documents, undefined);
+  assert.equal(q.hasDocuments, undefined);
+});
+test('minDaysToClose maps to closingAfter, a param the API validates', () => {
+  const q = toQueryParams({ ...DEFAULTS, minDaysToClose: 7 });
+  assert.ok(q.closingAfter, 'expected a closingAfter param');
+  const days = (new Date(q.closingAfter).getTime() - Date.now()) / 86400000;
+  assert.ok(days > 6.9 && days < 7.1, `expected ~7 days ahead, got ${days}`);
+});
+test('minDaysToClose 0 (show all) sends no closing filter', () => {
+  assert.equal(toQueryParams({ ...DEFAULTS, minDaysToClose: 0 }).closingAfter, undefined);
 });
 test('no unsupported value or B-BBEE params are ever sent', () => {
   const q = toQueryParams({ ...DEFAULTS, requireDocuments: true, minDaysToClose: 7 });

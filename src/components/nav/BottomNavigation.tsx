@@ -1,24 +1,38 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Search, Bookmark, Bell, User } from 'lucide-react';
+import { Home, Search, Bookmark, Bell, Newspaper, User } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { useSavedTenders } from '@/lib/saved-store';
+import { useAlerts } from '@/lib/alerts-store';
 
+// Blueprint §4 IA: Today · Discover · Saved · News · Alerts. Profile lives
+// in the drawer (mobile) and in the pinned desktop row below — not a tab.
 const ITEMS = [
-  { href: '/', label: 'Home', icon: Home },
-  { href: '/search', label: 'Search', icon: Search },
+  { href: '/', label: 'Today', icon: Home },
+  { href: '/search', label: 'Discover', icon: Search },
   { href: '/saved', label: 'Saved', icon: Bookmark },
+  { href: '/news', label: 'News', icon: Newspaper },
   { href: '/alerts', label: 'Alerts', icon: Bell },
-  { href: '/profile', label: 'Profile', icon: User },
 ] as const;
 
 /**
  * Persistent tab bar on mobile. On desktop (md+) it becomes a left sidebar —
  * same routes, same icons, one coherent system.
  */
-export function BottomNavigation({ alertCount = 0 }: { alertCount?: number }) {
+export function BottomNavigation() {
   const pathname = usePathname();
+  const { saved, session } = useSavedTenders();
+  const { unread: unreadAlerts } = useAlerts();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
+  // Counts are real: saved rows from the store; unread in-app alerts from
+  // the alerts store (deadline/match/system events only — never synthetic).
+  const savedCount = saved.length;
+  const badge = (label: string): number | null => {
+    if (label === 'Saved') return savedCount;
+    if (label === 'Alerts') return unreadAlerts;
+    return null;
+  };
 
   return (
     <nav
@@ -35,6 +49,7 @@ export function BottomNavigation({ alertCount = 0 }: { alertCount?: number }) {
 
       {ITEMS.map(({ href, label, icon: Icon }) => {
         const active = isActive(href);
+        const count = badge(label);
         return (
           <Link
             key={href}
@@ -48,9 +63,9 @@ export function BottomNavigation({ alertCount = 0 }: { alertCount?: number }) {
           >
             <span className="relative">
               <Icon size={23} strokeWidth={active ? 2 : 1.7} aria-hidden />
-              {label === 'Alerts' && alertCount > 0 && (
-                <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-lg border-2 border-white bg-urgent px-1 text-[9.5px] font-bold text-white">
-                  {alertCount}
+              {count !== null && count > 0 && (
+                <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-lg border-2 border-white bg-navy px-1 text-[9.5px] font-bold text-white">
+                  {count > 99 ? '99+' : count}
                 </span>
               )}
             </span>
@@ -58,6 +73,24 @@ export function BottomNavigation({ alertCount = 0 }: { alertCount?: number }) {
           </Link>
         );
       })}
+
+      {/* Desktop-only account row — mobile reaches Profile via the drawer. */}
+      <Link
+        href={session.signedIn ? '/profile' : '/login'}
+        className="mt-auto hidden items-center gap-3 rounded-md border-t border-line px-3 pb-1 pt-4 md:flex"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-navy text-[12.5px] font-bold text-white">
+          {session.signedIn ? (session.initials ?? 'U') : <User size={16} strokeWidth={2} aria-hidden />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-semibold text-ink">
+            {session.signedIn ? (session.name ?? 'Profile') : 'Sign in free'}
+          </span>
+          <span className="block truncate text-[11px] text-ink-3">
+            {session.signedIn ? 'View profile' : 'Save tenders & get matched'}
+          </span>
+        </span>
+      </Link>
     </nav>
   );
 }

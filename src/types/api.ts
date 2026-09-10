@@ -1,130 +1,251 @@
 /**
- * Wire types for the South African Tender API.
- * Source: https://tenderbased-production.up.railway.app/openapi.json (OpenAPI 3.1.0)
+ * Wire types for the TenderBase Ingestion API.
+ * Source: https://tenderbase-api-rqrh.onrender.com
  *
- * These mirror the upstream payload EXACTLY — snake_case, nullable where the
- * spec says nullable. Never use them in components; map to the domain model in
+ * The contract below was established by probing the live service on
+ * 2026-09-08 — `/docs/json` ships an empty `paths: {}`, so there is no
+ * machine-readable spec to generate from. Each note records what was actually
+ * observed, not what was assumed.
+ *
+ * Two properties make this feed different from the one it replaces:
+ *
+ *  1. It is **camelCase** and already close to our domain model — the API
+ *     advertises itself as "mirrored to 100% app-compatible contract shapes".
+ *  2. It is **public** — no `X-API-Key`, no auth header. Every probe below
+ *     succeeded unauthenticated.
+ *
+ * Never use these types in components; map to the domain model in
  * `src/lib/adapt.ts` first. That boundary is what stops upstream churn from
  * rippling through the UI.
  */
 
+/**
+ * Upstream lifecycle state, distinct from our derived display status.
+ * Verified values: `active` (396), `complete` (9), `cancelled` (3) — the
+ * counts come from `/stats`. Kept open with `| string` because the enum is not
+ * published anywhere and a new state must not break the build.
+ */
+export type ApiLifecycleStatus = 'active' | 'complete' | 'cancelled' | (string & {});
+
+/**
+ * MIME type, uppercased by upstream: `APPLICATION/PDF`,
+ * `APPLICATION/VND.OPENXMLFORMATS-OFFICEDOCUMENT.WORDDOCUMENT`.
+ * Not the `pdf` / `xlsx` label the UI wants — see `deriveFileType()`.
+ */
 export interface ApiDocument {
-  id: number;
-  title: string | null;
+  id: string;
+  name: string;
+  fileType: string;
+  /** Always 0 in the current feed; the UI must not render "0 KB". */
+  sizeBytes: number;
+  /** Always `''` in the current feed. */
+  updatedAt: string;
+  /** Direct eTenders download URL, already absolute and signed by blob name. */
   url: string;
-  type: string | null;
-  filename: string | null;
-  mime_type: string | null;
-  file_size: number | null;
+  isAddendum: boolean;
 }
 
+/**
+ * Upstream nests contact details under `contactInformation` AND repeats them
+ * as flat `contactName` / `contactEmail` / `contactPhone` columns. The two
+ * agreed in every sampled record; `adaptContact()` prefers the nested object
+ * and falls back to the flat fields.
+ */
+export interface ApiContactInformation {
+  name: string | null;
+  email: string | null;
+  telephone: string | null;
+}
+
+/** Present on `/tenders/:id` only. Empty in every sampled record. */
 export interface ApiAmendment {
-  id: number;
-  field_changed: string;
-  old_value: string | null;
-  new_value: string | null;
-  detected_at: string;
+  id?: string | number;
+  field?: string;
+  from?: string | null;
+  to?: string | null;
+  detectedAt?: string;
+  [key: string]: unknown;
 }
-
-/** Upstream lifecycle status. Distinct from our derived display status. */
-export type ApiStatus =
-  | 'ACTIVE'
-  | 'AMENDED'
-  | 'CLOSED'
-  | 'CANCELLED'
-  | 'EXPIRED';
-
-export type ApiDeadlineState = 'ACTIVE' | 'CLOSING_SOON' | 'CLOSED' | string;
 
 export interface ApiTender {
-  id: number;
-  source: string;
-  /** Often the eTenders reference, e.g. "168713". */
-  tender_number: string | null;
-  ocid: string | null;
+  /** CUID, e.g. `cmtt6lx56000142xs7i6g1dkg`. Strings now — not numeric ids. */
+  id: string;
+  /** eTenders reference, e.g. `169585`. */
+  tenderNumber: string | null;
   /**
-   * WARNING: in the live eTenders feed this is usually a reference CODE
-   * ("20/2026 LLM"), not a readable title. `description` holds the real
+   * WARNING: usually a reference CODE ("RFQ12214 RE-ISSUE", "NB096",
+   * "ZNQ59/26/27"), not a readable subject. `description` holds the real
    * subject. See `deriveTitle()` in adapt.ts.
    */
   title: string;
+  /** The real subject line, frequently ALL CAPS. */
   description: string | null;
   organisation: string | null;
-  province: string | null;
-  municipality: string | null;
+  /**
+   * One of 62 normalised upstream categories, e.g. `Services: Professional`,
+   * `Supplies: Computer Equipment`. NOT the app's 13-value `Category` enum —
+   * `deriveCategory()` maps between them. Filter with the verbatim string.
+   */
   category: string | null;
-  categories: string[];
-  tender_type: string | null;
-  status: ApiStatus;
-  deadline_state: ApiDeadlineState;
-  advertised_date: string | null;
-  closing_date: string | null;
-  closing_time: string | null;
-  closing_at: string | null;
-  submission_method: string | null;
-  source_url: string | null;
-  is_sample: boolean;
+  /**
+   * Display name, and it matches `/provinces` exactly: the 9 provinces plus
+   * `National` (45 records). No nulls observed — unlike the previous feed,
+   * where 59% were null.
+   */
+  province: string | null;
+  /**
+   * Verbatim eTenders locality, ` - ` delimited and postal-code terminated:
+   * `King Shaka International Airport - La Mercy - Durban - 4000`.
+   * Too long for a card — `deriveLocation()` shortens it.
+   */
+  location: string | null;
+  /**
+   * ZAR cents. `null` in every sampled record: the feed does not carry value.
+   * Passed through untouched so the UI renders "Not disclosed", never "R0".
+   */
+  valueCents: number | null;
+  /** Date only, no time: `2026-09-08`. */
+  publishedDate: string | null;
+  /** Full ISO instant: `2026-09-21T16:00:00.000Z`. */
+  closingDate: string | null;
+  sourceUrl: string | null;
   documents: ApiDocument[];
+  contactInformation: ApiContactInformation | null;
+  /**
+   * Per-user state. Always `false` / `null` from this API — it has no notion
+   * of our Supabase user, so the saved-tenders layer must overwrite it.
+   */
+  isSaved: boolean;
+  savedAt: string | null;
+  matchScore: number | null;
+  status: ApiLifecycleStatus;
+  /** CIDB grading, e.g. `1GB`. Null in every sampled record. */
+  cidbGrade: string | null;
+  cidbGradeRaw: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  /** When the ingest pipeline first saw the record. Full ISO instant. */
+  firstSeenAt: string | null;
 }
 
 export interface ApiTenderDetail extends ApiTender {
   amendments: ApiAmendment[];
 }
 
-export interface ApiPaginationMeta {
-  page: number;
-  limit: number;
+/**
+ * Sort values accepted by `/tenders`. Probed by sending an invalid value,
+ * which returns the enum verbatim:
+ * `Expected 'latest' | 'closing' | 'closing_desc' | 'published_asc'`.
+ *
+ * `closing` is ASCENDING by closing date and includes already-closed records
+ * first — pair it with `closingAfter` to get "closing soon".
+ */
+export type ApiSort = 'latest' | 'closing' | 'closing_desc' | 'published_asc';
+
+/**
+ * Query params for `GET /tenders`.
+ *
+ * Established by sending deliberately invalid values for ~22 candidate names.
+ * Only these five are type-checked upstream:
+ *   `page` (number), `limit` (number),
+ *   `closingBefore` / `closingAfter` / `publishedAfter` (datetime).
+ * Verified as filtering: `q`, `province`, `category`, `status`, `sort`.
+ * Verified as IGNORED: `closingWithin`, `hasDocuments`, `organisation`,
+ * `municipality`, `search`, `has_documents`, `closing_within`.
+ * Unknown params are silently dropped rather than rejected, so a typo fails
+ * open into an unfiltered result set — this list is the only guard.
+ */
+export interface ApiTenderQuery {
+  page?: number;
+  limit?: number;
+  /** Full-text search. Matches `description` (case-insensitive), not just title. */
+  q?: string;
+  /** Exact display name, e.g. `KwaZulu-Natal` — slugs match nothing. */
+  province?: string;
+  /** Exact upstream category, e.g. `Construction`. */
+  category?: string;
+  /** `active` | `complete` | `cancelled`. */
+  status?: string;
+  sort?: ApiSort;
+  /** ISO datetime. Inclusive upper bound on closing date. */
+  closingBefore?: string;
+  /** ISO datetime. Inclusive lower bound on closing date. */
+  closingAfter?: string;
+  /** ISO datetime. */
+  publishedAfter?: string;
+}
+
+/** Every envelope carries this; it is the upstream's own live/mock flag. */
+export type ApiSource = 'live' | 'mock' | (string & {});
+
+export interface ApiTenderListResponse {
+  results: ApiTender[];
   total: number;
-  total_pages: number;
+  page: number;
+  totalPages: number;
+  source: ApiSource;
 }
 
-export interface ApiPaginated<T> {
-  data: T[];
-  pagination: ApiPaginationMeta;
+export interface ApiTenderDetailResponse {
+  tender: ApiTenderDetail;
+  source: ApiSource;
 }
 
-export interface ApiFacetValue {
-  name: string;
+/** `GET /categories` — 62 entries, pre-sorted by count descending. */
+export interface ApiCategoryFacet {
+  category: string;
   count: number;
 }
 
-export interface ApiFacets {
-  provinces: ApiFacetValue[];
-  categories: ApiFacetValue[];
-  sources: ApiFacetValue[];
+export interface ApiCategoriesResponse {
+  categories: ApiCategoryFacet[];
+  total: number;
+  source: ApiSource;
 }
 
-export interface ApiTaxonomyItem {
-  id: number;
-  slug: string;
-  name: string;
+/** `GET /provinces` — 10 entries (9 provinces + National). */
+export interface ApiProvinceFacet {
+  province: string;
+  count: number;
 }
 
-export interface ApiErrorBody {
-  error: { code: string; message: string; request_id: string };
+export interface ApiProvincesResponse {
+  provinces: ApiProvinceFacet[];
+  total: number;
+  source: ApiSource;
 }
 
-/** Sort values the API accepts. Anything else is a 400. */
-export type ApiSort = 'newest' | 'closing' | 'updated' | 'relevance';
+export interface ApiStats {
+  totalTenders: number;
+  activeTenders: number;
+  completedTenders: number;
+  cancelledTenders: number;
+  /** Upstream's own "expiring soon" window; its length is not documented. */
+  expiringSoonTenders: number;
+  categoriesCount: number;
+  provincesCount: number;
+  latestPublishedDate: string | null;
+  uptimeSeconds: number;
+}
 
-export interface ApiTenderQuery {
-  page?: number;
-  /** Hard-capped at 100 upstream; larger values 422. */
-  limit?: number;
-  category?: string;
-  province?: string;
-  municipality?: string;
-  organisation?: string;
-  source?: string;
-  status?: string;
-  search?: string;
-  sort?: ApiSort;
-  /** Window such as '24h' or '7d'. */
-  closing_within?: string;
-  closing_before?: string;
-  closing_after?: string;
-  advertised_after?: string;
-  advertised_before?: string;
-  has_documents?: boolean;
-  document_type?: string;
+export interface ApiStatsResponse {
+  stats: ApiStats;
+  source: ApiSource;
+}
+
+/**
+ * Zod validation failure from `/tenders`:
+ * `{ "error": "Invalid query", "issues": ["page: Expected number, received nan"] }`
+ */
+export interface ApiValidationError {
+  error: string;
+  issues: string[];
+}
+
+/** Fastify's default 404/500 body: `{ message, error, statusCode }`. */
+export interface ApiHttpError {
+  message: string;
+  error: string;
+  statusCode: number;
 }

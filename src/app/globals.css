@@ -1,28 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  html {
-    -webkit-tap-highlight-color: transparent;
-  }
-  body {
-    @apply bg-canvas text-ink antialiased;
-    letter-spacing: -0.01em;
-    /* Capacitor: respect Android/iOS safe areas */
-    padding-top: env(safe-area-inset-top);
-  }
-  h1 { @apply text-h1 font-bold tracking-[-0.035em]; }
-  h2 { @apply text-h2 font-bold tracking-[-0.03em]; }
+:root {
+  --font-inter: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-@layer components {
-  /* Scrollable chip rails hide their scrollbar on mobile. */
-  .no-scrollbar::-webkit-scrollbar { display: none; }
-  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+@layer base {
+  html {
+    font-family: var(--font-inter);
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+  body {
+    @apply bg-white text-ink;
+  }
+}
 
-  /* Content sits above the fixed tab bar / beside the desktop sidebar. */
-  .app-scroll {
-    @apply pb-28 md:pb-8 md:pl-60;
+/* Scrollable chip rails hide their scrollbar on mobile. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Reduced motion: kill every CSS animation. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
