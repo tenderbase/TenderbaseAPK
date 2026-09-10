@@ -115,6 +115,16 @@ cd android && ./gradlew assembleDebug --no-daemon
   re-caches after a deploy.
 - **The upstream API also sleeps** (Render free tier) — the app's 45 s
   timeout plus the "tender service is waking up" fallback already handle it.
+- **Dashboard env vars beat `render.yaml`.** If this service was created before
+  the September 2026 ingestion-API migration, its dashboard copy of
+  `TENDERBASE_API_URL` may still point at the retired API while the Blueprint
+  shows the new host — the September 2026 outage was exactly this. Signature:
+  lists render through the browser-direct fallback ("our server could not reach
+  it") while the server's own `/api/tenders` answers
+  `{"results":[],"total":0,"source":"live"}` and every tender detail 404s. Fix:
+  **Environment** → set `TENDERBASE_API_URL` to the `render.yaml` value → save
+  (redeploys). The keepalive line `[keepalive] tender API ping: HTTP 404 …` in
+  **Logs** confirms it in seconds.
 - **Cost.** Second always-on service; a small Next.js app on a paid
   instance is a few dollars a month.
 

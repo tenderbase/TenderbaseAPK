@@ -20,6 +20,7 @@ import {
   getTender,
   isSuspiciouslyEmpty,
   listTenders,
+  statsShowLiveDataset,
   UPSTREAM_BASE_URL,
 } from '@/lib/tenders';
 import { FIXTURE_TENDERS } from '@/lib/fixtures/tender-api';
@@ -65,6 +66,22 @@ test('an empty first page is a suspect answer, not the truth', () => {
   assert.equal(isSuspiciouslyEmpty({}), true, 'a body missing both fields is empty too');
   assert.equal(isSuspiciouslyEmpty({ results: [{ id: 't1' }], total: 0 }), false, 'rows without a total are data');
   assert.equal(isSuspiciouslyEmpty({ results: [], total: 411 }), false, 'a real total with page-overrun rows is a real answer');
+});
+
+test('a detail 404 is only believed when /stats proves a live dataset', () => {
+  // The September 2026 incident: a stale TENDERBASE_API_URL pointed at the
+  // retired service, whose numeric-id world 404s every current id. Trusting
+  // that 404 rendered a false "Page not found" and never gave the
+  // browser-direct fallback its turn — so getTender distrusts a 404 unless the
+  // upstream vouches for itself with a non-empty dataset.
+  assert.equal(statsShowLiveDataset({ stats: { totalTenders: 411 } }), true);
+  assert.equal(statsShowLiveDataset({ stats: { totalTenders: 0 } }), false, 'an empty dataset cannot vouch for a 404');
+  assert.equal(statsShowLiveDataset({ stats: {} }), false);
+  assert.equal(statsShowLiveDataset({}), false);
+  assert.equal(statsShowLiveDataset(null), false);
+  assert.equal(statsShowLiveDataset('live'), false);
+  assert.equal(statsShowLiveDataset({ stats: { totalTenders: '411' } }), false, 'a count must be numeric');
+  assert.equal(statsShowLiveDataset({ stats: { totalTenders: -1 } }), false);
 });
 
 test('no param the new API ignores is still being sent', () => {

@@ -153,3 +153,57 @@ test('a second attempt never reads the Data Cache', async (t) => {
   const page = await api.list({ limit: 5 });
   assert.equal(page.total, 1, 'a 503-then-200 sequence ends in data');
 });
+
+test('a 200 with the wrong envelope is an upstream error, not a believed-empty page', async (t) => {
+  // The September 2026 incident: the deployment pointed at the retired API,
+  // whose list body is `{ data: [...], pagination: {...} }` — no `results`.
+  // Reading `.results` off that served a confident live-empty catalogue.
+  const { base, requests } = await loopback(t, (_req, res) => {
+    jsonResponse(res, 200, { data: [{ id: 1 }], pagination: { page: 1, total: 755 } });
+  });
+
+  const api = tenderApiServerFrom(base, { timeoutMs: 1_000, retryDelayMs: 10 });
+  await assert.rejects(
+    api.list({}),
+    (e) => e.code === 'UPSTREAM_ERROR' && e.status === 502,
+  );
+  assert.equal(requests.count, 1, 'a parseable wrong shape is deterministic — no retry, straight to fallback');
+});
+
+test('wrong-shaped detail and facet envelopes are rejected the same way', async (t) => {
+  const { base } = await loopback(t, (req, res) => {
+    if (req.url.startsWith('/tenders/')) return jsonResponse(res, 200, { data: { id: 1 } });
+    if (req.url === '/categories') return jsonResponse(res, 200, { data: [] });
+    return jsonResponse(res, 200, { data: [] });
+  });
+
+  const api = tenderApiServerFrom(base, { timeoutMs: 1_000, retryDelayMs: 10 });
+  await assert.rejects(api.getById('whatever'), (e) => e.code === 'UPSTREAM_ERROR');
+  await assert.rejects(api.categories(), (e) => e.code === 'UPSTREAM_ERROR');
+  await assert.rejects(api.provinces(), (e) => e.code === 'UPSTREAM_ERROR');
+});
+
+test('well-shaped envelopes pass through untouched', async (t) => {
+  const { base } = await loopback(t, (req, res) => {
+    if (req.url.startsWith('/tenders/')) {
+      return jsonResponse(res, 200, { tender: { id: 'x' }, source: 'live' });
+    }
+    if (req.url === '/categories') {
+      return jsonResponse(res, 200, {
+        categories: [{ category: 'Construction', count: 18 }],
+        total: 1,
+        source: 'live',
+      });
+    }
+    return jsonResponse(res, 200, {
+      provinces: [{ province: 'Gauteng', count: 96 }],
+      total: 1,
+      source: 'live',
+    });
+  });
+
+  const api = tenderApiServerFrom(base, { timeoutMs: 1_000, retryDelayMs: 10 });
+  assert.equal((await api.getById('x')).tender.id, 'x');
+  assert.equal((await api.categories()).categories[0].category, 'Construction');
+  assert.equal((await api.provinces()).provinces[0].province, 'Gauteng');
+});

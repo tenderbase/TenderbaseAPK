@@ -2,10 +2,12 @@
  * The curated-feed egress ladder: direct first, relay when the source's edge
  * refuses our datacenter IP.
  *
- * Production incident this locks in: BusinessTech's edge answers Render's
- * egress IP with 403 no matter what User-Agent the request carries, so the
- * direct fetch is dead on arrival from the deployed host. The relay reads the
- * same public XML from a neutral IP. Relaying is deliberately limited to
+ * Production incident this locks in: a source edge answering Render's egress
+ * IP with 403 no matter what User-Agent the request carries, so the direct
+ * fetch is dead on arrival from the deployed host (the source that did this
+ * was later dropped from the registry; the ladder stays for the next edge
+ * that misbehaves). The relay reads the same public XML from a neutral IP.
+ * Relaying is deliberately limited to
  * curated registry feeds (repo-controlled addresses); the guarded
  * user-supplied path never relays, so the fetch-target policy keeps meaning
  * "addresses WE connect to".
@@ -34,8 +36,8 @@ async function loopback(t, handler) {
 }
 
 test('relayFeedUrl percent-encodes the target into the template', () => {
-  const url = relayFeedUrl('https://businesstech.co.za/news/feed/?a=1&b=2', 'https://relay.example/raw?url={url}');
-  assert.equal(url, 'https://relay.example/raw?url=https%3A%2F%2Fbusinesstech.co.za%2Fnews%2Ffeed%2F%3Fa%3D1%26b%3D2');
+  const url = relayFeedUrl('https://www.citizen.co.za/business/feed/?a=1&b=2', 'https://relay.example/raw?url={url}');
+  assert.equal(url, 'https://relay.example/raw?url=https%3A%2F%2Fwww.citizen.co.za%2Fbusiness%2Ffeed%2F%3Fa%3D1%26b%3D2');
 });
 
 test("'none' or a template without {url} disables the relay", () => {

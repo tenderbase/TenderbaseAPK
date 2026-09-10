@@ -308,7 +308,8 @@ behave offline.
 | Network error / DNS / no egress | Fixtures + "Could not reach the tender service. Showing 8 tenders captured from the live API on 2026-09-08." |
 | Cold start / timeout (>20s) | Fixtures + "The tender service is still waking up…" |
 | 400 invalid query | Fixtures + the upstream `issues[]` verbatim, so the bug is visible |
-| 404 on detail | Real Next.js `notFound()` → 404 page (upstream was reachable, so the answer is trusted) |
+| 200 with the wrong envelope (`results[]` / `tender{}` / `categories[]` missing) | Rejected as an upstream error — never served as a confident live-empty catalogue. This is how a stale `TENDERBASE_API_URL` (still pointing at the retired host) surfaces. |
+| 404 on detail | Real Next.js `notFound()` → 404 page, but only when `/stats` proves the upstream holds the live dataset — otherwise the browser resolves the id directly instead of a false 404 |
 | `TENDERBASE_FIXTURES_ONLY=true` | Fixtures immediately, no network attempt |
 | Any of the above, but the **browser** can reach the API | Live rows, labelled "fetched directly from the tender service in your browser" (see §5.1) |
 
@@ -364,7 +365,7 @@ curl -s "$BASE/stats"             > /tmp/stats.json
 ## 6. Verifying
 
 ```bash
-npm test          # 245 tests
+npm test          # 251 tests
 npm run typecheck
 npm run build
 ./smoke-test.sh   # route + integration assertions against a running server
