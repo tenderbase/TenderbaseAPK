@@ -18,6 +18,7 @@ import {
   getLatest,
   getStats,
   getTender,
+  isSuspiciouslyEmpty,
   listTenders,
   UPSTREAM_BASE_URL,
 } from '@/lib/tenders';
@@ -53,6 +54,17 @@ test('the retired Railway API is not referenced anywhere in src/', () => {
   };
   walk(root);
   assert.deepEqual(offenders, [], `old API still referenced in: ${offenders.join(', ')}`);
+});
+
+test('an empty first page is a suspect answer, not the truth', () => {
+  // The production bug: a mid-wake upstream (or a Data Cache entry captured
+  // during one) answered `{"results":[],"total":0}` with a live badge and the
+  // UI rendered "0 tenders found" on a dataset of ~411. Anything answering
+  // empty is re-asked cache-bypassed before it may be believed.
+  assert.equal(isSuspiciouslyEmpty({ results: [], total: 0 }), true);
+  assert.equal(isSuspiciouslyEmpty({}), true, 'a body missing both fields is empty too');
+  assert.equal(isSuspiciouslyEmpty({ results: [{ id: 't1' }], total: 0 }), false, 'rows without a total are data');
+  assert.equal(isSuspiciouslyEmpty({ results: [], total: 411 }), false, 'a real total with page-overrun rows is a real answer');
 });
 
 test('no param the new API ignores is still being sent', () => {

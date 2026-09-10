@@ -10,7 +10,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { DataSourceNotice } from '@/components/ui/DataSourceNotice';
 import { MenuButton } from '@/components/nav/MenuButton';
 import { cn } from '@/lib/cn';
-import { directTenderPage, shouldUseDirectFallback } from '@/lib/tender-direct';
+import { DIRECT_FALLBACK_ENABLED, directTenderPage, shouldUseDirectFallback } from '@/lib/tender-direct';
 import { useSavedTenders } from '@/lib/saved-store';
 import { useSavedSearches } from '@/lib/saved-searches-store';
 import { useTier } from '@/lib/tier-store';
@@ -111,7 +111,26 @@ export function SearchView({
   } | null>(null);
 
   useEffect(() => {
-    if (!shouldUseDirectFallback(source)) {
+    /**
+     * A "live" answer of zero rows on an unfiltered first page is not a
+     * catalogue — it is the mid-wake-upstream / poisoned-cache signature the
+     * server layer already retries internally (see `isSuspiciouslyEmpty` in
+     * `lib/tenders.ts`). If it still answers empty, the browser re-asks the
+     * public upstream directly rather than showing "0 tenders found" on a
+     * dataset that holds hundreds. A *filtered* zero is a real answer and
+     * never triggers this.
+     */
+    const hasFilters = ['q', 'category', 'province', 'status', 'closingWithin'].some((k) =>
+      params.get(k),
+    );
+    const suspiciousEmpty =
+      source === 'live' &&
+      total === 0 &&
+      !hasFilters &&
+      Number(params.get('page') ?? 1) === 1 &&
+      DIRECT_FALLBACK_ENABLED;
+
+    if (!shouldUseDirectFallback(source) && !suspiciousEmpty) {
       setDirect(null);
       return;
     }
@@ -147,7 +166,7 @@ export function SearchView({
     return () => {
       cancelled = true;
     };
-  }, [source, params]);
+  }, [source, total, params]);
 
   // Browser-direct rows win when present; otherwise the server's answer stands.
   const shownResults = direct?.results ?? results;

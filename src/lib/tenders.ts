@@ -15,7 +15,7 @@ import {
 } from '@/lib/fixtures/tender-api';
 import { API_BASE_URL, FIXTURES_ALLOWED, FIXTURES_ONLY, TenderApiError, tenderApiServer } from '@/lib/tender-api.server';
 import { buildApiQuery, closingWithinDays, type ListOptions } from '@/lib/tender-query';
-import type { ApiStats, ApiTender } from '@/types/api';
+import type { ApiCategoriesResponse, ApiProvincesResponse, ApiStats, ApiTender } from '@/types/api';
 import type { Category, TenderWithUserState } from '@/types/tender';
 
 // Re-exported for the existing importers (tests included). The implementation
@@ -81,9 +81,27 @@ function errorNotice(e?: unknown): string {
       return 'Could not reach the tender service. Please try again shortly.';
     if (e.code === 'INVALID_QUERY')
       return 'The tender service rejected our query. Please refresh and try again.';
-    return `The tender service returned an error (${e.code}). Please try again.`;
+    const detail = e.status ? ` ${e.status}` : '';
+    return `The tender service returned an error (${e.code}${detail}). Please try again.`;
   }
   return 'The tender service is unavailable right now. Please try again shortly.';
+}
+
+/**
+ * Does this list answer claim the whole catalogue is empty?
+ *
+ * `{"results":[], "total":0, source:"live"}` is the signature of a mid-wake
+ * upstream (it answers 200 before its dataset is loaded) or of a Next Data
+ * Cache entry captured during one of those windows — never of the real
+ * dataset, which holds ~411 tenders. Believing it page-side is what rendered
+ * "0 tenders found" on a healthy catalogue, and because the answer claims
+ * `live`, the browser-direct fallback (which only runs on non-live sources)
+ * never corrected it. Anything answering empty is re-asked with the cache
+ * bypassed before it is believed; a genuinely empty dataset answers empty
+ * twice and is then shown as it is.
+ */
+export function isSuspiciouslyEmpty(res: { results?: unknown[]; total?: number }): boolean {
+  return (res.results?.length ?? 0) === 0 && (res.total ?? 0) === 0;
 }
 
 function matches(t: ApiTender, q: string): boolean {
@@ -176,7 +194,15 @@ export async function listTenders(opts: ListOptions = {}): Promise<TenderPage> {
   const query = buildApiQuery(opts);
   return withFallback<TenderPage>(
     async () => {
-      const res = await tenderApiServer.list(query);
+      let res = await tenderApiServer.list(query);
+      // An empty first answer gets one cache-bypassing re-ask (see
+      // `isSuspiciouslyEmpty`) — this is the guard that keeps a mid-wake
+      // upstream or a poisoned Data Cache entry from rendering as
+      // "0 tenders found" with a live badge.
+      if (isSuspiciouslyEmpty(res)) {
+        const fresh = await tenderApiServer.list(query, { noStore: true });
+        if (!isSuspiciouslyEmpty(fresh)) res = fresh;
+      }
       return {
         results: (res.results ?? []).map((t) => adaptTenderWithState(t)),
         total: res.total ?? res.results?.length ?? 0,
@@ -284,9 +310,26 @@ export async function getFacets(): Promise<Facets> {
         tenderApiServer.categories(),
         tenderApiServer.provinces(),
       ]);
+      // Two empty vocabularies is the same "not really answered" signature as
+      // an empty catalogue — re-ask with the cache bypassed before rendering
+      // filter chips that say the dataset has no categories at all.
+      const facetCount = (res: ApiCategoriesResponse | ApiProvincesResponse): number =>
+        ('categories' in res ? res.categories?.length : res.provinces?.length) ?? 0;
+      let freshCats = cats;
+      let freshProvs = provs;
+      if (facetCount(cats) === 0 && facetCount(provs) === 0) {
+        const [retryCats, retryProvs] = await Promise.all([
+          tenderApiServer.categories({ noStore: true }),
+          tenderApiServer.provinces({ noStore: true }),
+        ]);
+        if (facetCount(retryCats) > 0 || facetCount(retryProvs) > 0) {
+          freshCats = retryCats;
+          freshProvs = retryProvs;
+        }
+      }
       return {
-        categories: adaptCategories(cats),
-        provinces: adaptProvinces(provs),
+        categories: adaptCategories(freshCats),
+        provinces: adaptProvinces(freshProvs),
         source: 'live' as DataSource,
       };
     },
@@ -313,8 +356,22 @@ export async function getStats(): Promise<DatasetStats> {
   }
   return withFallback(
     async () => {
-      const res = await tenderApiServer.stats();
-      return { ...res.stats, source: 'live' as DataSource };
+      let stats = (await tenderApiServer.stats()).stats;
+      if (!stats || typeof stats.totalTenders !== 'number') {
+        // A 200 without a stats object is the mid-wake upstream again — one
+        // cache-bypassing re-ask, then report honestly if it is still junk.
+        stats = (await tenderApiServer.stats({ noStore: true })).stats;
+      }
+      if (!stats || typeof stats.totalTenders !== 'number') {
+        throw new TenderApiError(502, 'UPSTREAM_ERROR', 'The stats payload was not the expected shape.');
+      }
+      if (stats.totalTenders === 0) {
+        // Zero pipeline totals on a live badge is the lying-empty signature
+        // (the real dataset holds ~411 tenders) — same re-ask as listTenders.
+        const fresh = (await tenderApiServer.stats({ noStore: true })).stats;
+        if (fresh && typeof fresh.totalTenders === 'number' && fresh.totalTenders !== 0) stats = fresh;
+      }
+      return { ...stats, source: 'live' as DataSource };
     },
     (e) =>
       FIXTURES_ALLOWED
