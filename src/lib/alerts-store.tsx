@@ -23,13 +23,14 @@ import {
 } from '@/lib/alerts';
 import { useSavedTenders } from '@/lib/saved-store';
 import { useTier } from '@/lib/tier-store';
-import { useMatchContext } from '@/lib/use-match-context';
 import { reconcileSettings } from '@/lib/sync-core';
 import { fetchMutedAlertKinds, persistMutedAlertKinds } from '@/lib/alert-settings-remote';
+import { createClient as createSupabaseClient } from '@/lib/supabase';
 import {
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  notificationToEntry,
   persistNotifications,
 } from '@/lib/notifications-remote';
 import { isSupabaseConfigured } from '@/lib/supabase-config';
@@ -75,7 +76,6 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
 
   const [entries, setEntries] = useState<AlertEntry[]>(() => load<AlertEntry[]>(STORE_KEY, []));
   const [muted, setMuted] = useState<AlertKind[]>(() => load<AlertKind[]>(MUTE_KEY, []));
-  const hydrated = useRef(false);
   const remoteHydrated = useRef(false);
   const mutedSynced = useRef(false);
   const mutedRef = useRef(muted);
@@ -88,8 +88,7 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     save(MUTE_KEY, muted);
   }, [muted]);
 
-  // Hydrate the inbox from Postgres on sign-in. Local entries are retained
-  // because deadline/match detection can happen before the first network read.
+  // Hydrate the inbox from the account database on sign-in.
   useEffect(() => {
     if (!signedIn || !isSupabaseConfigured || remoteHydrated.current) return;
     let cancelled = false;
@@ -108,6 +107,44 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!signedIn) remoteHydrated.current = false;
+  }, [signedIn]);
+
+  // Realtime delivery: a notification inserted on this account appears in
+  // the inbox and badge without a refresh.
+  useEffect(() => {
+    if (!signedIn || !isSupabaseConfigured) return;
+    const userPromise = import('@/lib/supabase-user').then((m) => m.currentSessionUserId());
+    let channel: ReturnType<ReturnType<typeof createSupabaseClient>['channel']> | null = null;
+    let cancelled = false;
+
+    void userPromise.then((userId) => {
+      if (!userId || cancelled) return;
+      const client = createSupabaseClient();
+      channel = client
+        .channel(`notifications:${userId}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+          (payload) => {
+            const entry = notificationToEntry(payload.new as Parameters<typeof notificationToEntry>[0]);
+            setEntries((prev) => addEntries(prev, [entry]));
+          },
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+          (payload) => {
+            const entry = notificationToEntry(payload.new as Parameters<typeof notificationToEntry>[0]);
+            setEntries((prev) => prev.map((e) => (e.id === entry.id ? entry : e)));
+          },
+        )
+        .subscribe();
+    });
+
+    return () => {
+      cancelled = true;
+      if (channel) void channel.unsubscribe();
+    };
   }, [signedIn]);
 
   // Mute-list sync.
@@ -160,7 +197,6 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
         if (additions.length > 0) void persistNotifications(additions);
       }
     }
-    hydrated.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saved, tier, trial.active, trial.daysLeft, session.signedIn]);
 
