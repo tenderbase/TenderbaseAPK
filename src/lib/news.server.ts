@@ -184,34 +184,104 @@ function toNewsItem(sourceId: string, raw: { title: string; url: string | null; 
 /**
  * Fetch one source's live feed; throws NewsFeedError with a code.
  *
- * One automatic retry for NETWORK_ERROR only: a reset connection or a hung
- * socket is usually gone a second later, while HTTP 403/404 or a blocked
- * target are answers — repeating them just doubles the latency. The retry
- * must not apply to the guarded (user-supplied) path's policy decisions.
+ * Egress strategy, in order:
+ *   1. Direct fetch (with one retry for transient network errors — a reset
+ *      connection is usually gone a second later, and the retry must not
+ *      apply to policy answers like 403).
+ *   2. If the direct answer looks like an *egress* failure — HTTP error
+ *      (BusinessTech's edge 403s Render's IP range regardless of User-Agent)
+ *      or a network failure — the same feed URL is fetched once through a
+ *      relay (`FEED_RELAY_URL`), which reads the public XML from an IP the
+ *      source has no reason to bot-score. Relay only ever applies to the
+ *      curated registry, whose addresses are repo constants; a *user-supplied*
+ *      URL (the Pro preview) is never relayed, so the fetch-target policy in
+ *      `lib/feed-target.ts` stays a policy about addresses WE connect to.
+ *
+ * A relay failure surfaces as a normal NewsFeedError — the notice says why,
+ * and the 30-second failure cache means the next Retry tries again.
  */
+/**
+ * Egress for one curated feed URL: direct (with a transient-error retry),
+ * then relay. Exported for tests, which bind it to loopback servers and an
+ * injected relay; `fetchSourceFeed` is the production caller.
+ *
+ * `via` is returned so a caller could report provenance; today it is only
+ * logged, because readers care that the feed is live, not which road it took.
+ */
+export async function fetchCuratedFeedText(
+  rssUrl: string,
+  relay: (target: string) => Promise<string> = defaultRelayFetch,
+): Promise<{ text: string; via: 'direct' | 'relay' }> {
+  try {
+    return { text: await fetchFeedText(rssUrl), via: 'direct' };
+  } catch (directErr) {
+    const code = (directErr as NewsFeedError)?.code;
+    if (code !== 'NETWORK_ERROR' && code !== 'HTTP_ERROR') throw directErr;
+
+    let lastErr = directErr;
+    if (code === 'NETWORK_ERROR') {
+      // One quick retry for pure network hiccups before reaching for the relay.
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      try {
+        return { text: await fetchFeedText(rssUrl), via: 'direct' };
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+
+    try {
+      return { text: await relay(rssUrl), via: 'relay' };
+    } catch (relayErr) {
+      console.error(
+        `[news] feed direct and relay both failed (direct: ${feedFailureReason(lastErr)}; relay: ${feedFailureReason(relayErr)})`,
+      );
+      throw lastErr; // the direct answer is the honest one to report
+    }
+  }
+}
+
 export async function fetchSourceFeed(sourceId: string): Promise<{ feedTitle: string | null; items: NewsItem[] }> {
   const def = sourceDef(sourceId);
   if (!def) throw feedError('PARSE_ERROR', `Unknown source ${sourceId}.`);
 
-  const parse = (text: string) => {
-    const parsed = parseFeedXml(text);
-    const items: NewsItem[] = [];
-    for (const raw of parsed.items) {
-      const it = toNewsItem(sourceId, raw);
-      if (it) items.push(it);
-    }
-    return { feedTitle: parsed.title, items };
-  };
-
-  let text: string;
-  try {
-    text = await fetchFeedText(def.rssUrl);
-  } catch (e) {
-    if ((e as NewsFeedError)?.code !== 'NETWORK_ERROR') throw e;
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    text = await fetchFeedText(def.rssUrl);
+  const { text } = await fetchCuratedFeedText(def.rssUrl);
+  const parsed = parseFeedXml(text);
+  const items: NewsItem[] = [];
+  for (const raw of parsed.items) {
+    const it = toNewsItem(sourceId, raw);
+    if (it) items.push(it);
   }
-  return parse(text);
+  return { feedTitle: parsed.title, items };
+}
+
+/**
+ * Where relayed feed fetches go. `{url}` is replaced with the feed URL,
+ * percent-encoded. The default relay (`api.allorigins.win`) is a free,
+ * keyless public URL reader — appropriate here because the payload is a
+ * public RSS document, no credentials or user data are sent, and only
+ * repo-controlled feed addresses ever use this path. Override with
+ * `NEWS_FEED_RELAY_URL` (or point it at your own tiny proxy for full control);
+ * set it to `none` to disable relaying outright.
+ */
+export const FEED_RELAY_TEMPLATE =
+  (process.env.NEWS_FEED_RELAY_URL ?? 'https://api.allorigins.win/raw?url={url}').trim();
+
+/** The relay URL for a feed, or null when relaying is disabled/misconfigured. */
+export function relayFeedUrl(target: string, template: string = FEED_RELAY_TEMPLATE): string | null {
+  const clean = template.trim();
+  if (!clean || clean.toLowerCase() === 'none' || !clean.includes('{url}')) return null;
+  return clean.replace('{url}', encodeURIComponent(target));
+}
+
+/** Relay the feed through the configured template, with the same caps as a direct fetch. */
+async function defaultRelayFetch(target: string): Promise<string> {
+  const relayUrl = relayFeedUrl(target);
+  if (!relayUrl) {
+    throw feedError('NETWORK_ERROR', 'Feed relay is not configured.');
+  }
+  // The relay URL is built here from a repo constant (or the operator's env),
+  // so the curated path's native redirect-following and byte cap still apply.
+  return fetchFeedText(relayUrl);
 }
 
 /**
