@@ -11,16 +11,7 @@ export const metadata: Metadata = {
 
 export const dynamic = 'force-dynamic';
 
-/**
- * The Pro hub. The server decides what this deployment and this account can
- * actually do — whether PayFast is configured, whether a payment could be
- * recorded, and whether the one-time trial is still available — so the page
- * never shows a checkout button that cannot work.
- *
- * In explicit TENDERBASE_TEST_PRO mode, the trial button is also available
- * without billing storage because that deployment is intentionally running
- * as a Pro test environment.
- */
+/** The Pro hub. The server decides whether PayFast checkout can actually run. */
 export default async function ProPage() {
   const config = payfastConfig();
   const user = await getUser();
@@ -40,12 +31,6 @@ export default async function ProPage() {
   }
 
   const storageReady = billingStorageConfigured();
-  const { reason } = entitlementFromSubscription(snapshot);
-  const testProEnabled = process.env.TENDERBASE_TEST_PRO === 'true';
-
-  // In test mode the deployment is intentionally Pro, so the trial CTA must
-  // remain usable even when Supabase billing storage is not configured.
-  const trialAvailable = testProEnabled || (reason === 'no_subscription' && (!user || storageReady));
 
   return (
     <ProHubView
@@ -54,7 +39,6 @@ export default async function ProPage() {
         storageReady,
         sandbox: config?.sandbox ?? false,
         signedIn: Boolean(user),
-        trialAvailable,
       }}
     />
   );
