@@ -501,93 +501,800 @@ Only after the solo CRM workflow is stable:
 
 ---
 
-## 12. Build order
+## 12. Organisation accounts — the collaboration foundation
 
-### Sprint 0 — Audit / foundation
-- freeze current visual language
-- remove stale trial references from product UX/docs
-- consolidate navigation
-- create native adapter boundary
-- fix calendar week state
-- establish CRM domain types/repository interfaces
+TenderBase must support a company as a first-class tenant. A user account is not the organisation.
 
-### Sprint 1 — Pipeline MVP
-- Pipeline screen
-- Add to Pipeline action on tender detail
-- opportunity stage
-- next action
-- basic task
-- Today integration
+Example:
 
-### Sprint 2 — Tender workspace
-- overview
-- AI decision card
-- requirements
-- tasks
-- timeline
-- documents
+```text
+ACME Construction
+│
+├── Organisation Admin / Construction Manager
+│
+├── Sales Manager
+│   ├── Sales User
+│   └── Sales User
+│
+├── Tender Manager
+│
+├── Estimator / Finance
+│
+└── Viewer
+```
 
-### Sprint 3 — Calendar + native
-- tender deadlines
-- task reminders
-- local notifications
-- haptics
-- deep links
-- offline/retry states
+### Core rules
 
-### Sprint 4 — Outcomes + analytics
-- won/lost
-- loss reasons
-- pipeline value
-- win rate
-- lightweight insights
+- One person has one TenderBase user identity.
+- A user may belong to one or more organisations later, but MVP can enforce one active organisation at a time.
+- CRM records belong to an organisation, not directly to a user.
+- Users have a membership in the organisation with a role.
+- Ownership/assignment of a tender is separate from organisation membership.
+- Leaving an organisation must never delete its CRM data.
+- The first organisation creator becomes the organisation owner/admin.
+- Invites are email-based and expire.
+- A user must accept an invitation before gaining organisation access.
+- Organisation membership and role changes are audited.
 
-### Sprint 5 — Team CRM
-- contacts
-- assignments
-- shared workspace
+### Why this matters
+
+The current `company_profiles` table is one row per user. That is fine for the existing personal workspace, but it is not sufficient for shared CRM ownership. The CRM model needs a shared organisation layer while preserving the user's personal profile/preferences.
+
+---
+
+## 13. Roles and permissions
+
+Use **roles + explicit permissions**, not hard-coded UI checks such as `if role === 'admin'` everywhere.
+
+Supabase supports RBAC using role/permission data and RLS, which is the right model for enforcing access at the database boundary. citeturn0search10turn0search3
+
+### Initial roles
+
+#### Owner
+
+Full organisation control.
+
+Can:
+- manage organisation
+- invite/remove users
+- assign roles
+- configure permissions
+- manage billing
+- see all CRM data
+- delete/archive organisation data
+
+#### Admin
+
+Operational control without ownership transfer.
+
+Can:
+- invite users
+- manage most roles/permissions
+- manage CRM settings
+- see/edit all organisation CRM data
+- manage team communication
+
+Cannot:
+- transfer ownership
+- permanently delete the organisation
+
+#### Tender Manager
+
+Runs the tender operation.
+
+Can:
+- create/edit opportunities
+- move pipeline stages
+- assign tenders/tasks
+- manage requirements
+- upload/manage tender workspace documents
+- communicate in organisation/tender channels
+- record bid/no-bid decisions
+- submit/close opportunities
+
+#### Sales Manager
+
+Owns commercial pipeline.
+
+Can:
+- create/edit opportunities
+- view organisation pipeline
+- assign sales tasks
+- communicate with team
+- view tender value/probability
+- manage customer/issuer contacts
+
+By default, sensitive compliance documents and organisation settings remain outside this role.
+
+#### Sales User
+
+Focused execution role.
+
+Can:
+- view permitted tenders
+- create/save opportunities if allowed
+- update assigned opportunities
+- complete assigned tasks
+- communicate with permitted users/channels
+- view relevant documents
+
+Cannot:
+- change roles
+- manage billing
+- remove users
+- alter organisation permissions
+
+#### Estimator / Finance
+
+Commercial preparation role.
+
+Can:
+- access assigned pricing/financial tasks
+- update pricing-related requirements
+- view tender values
+- communicate on assigned workspaces
+
+Sensitive financial information can be separately permissioned later.
+
+#### Viewer
+
+Read-only collaboration.
+
+Can:
+- view permitted tenders/pipeline/workspaces
+- read team communication
+- view non-sensitive documents
+
+Cannot:
+- modify CRM records
+- send organisation messages if the organisation disables viewer messaging
+- invite users
+
+### Permission model
+
+Permissions should be named by action, for example:
+
+```text
+organisation.view
+organisation.manage
+members.view
+members.invite
+members.manage_roles
+billing.manage
+crm.view
+crm.create
+crm.edit
+crm.delete
+pipeline.move
+pipeline.assign
+requirements.edit
+tasks.create
+tasks.assign
+tasks.complete
+documents.view
+documents.upload
+documents.delete
+contacts.view
+contacts.edit
+messages.view
+messages.send
+messages.moderate
+reports.view
+```
+
+Roles map to permissions. The UI uses permissions to show/hide actions, but **Supabase RLS and server-side authorization are the final enforcement layer**.
+
+### Custom roles later
+
+Pro/Team roadmap can allow an admin to create a custom role by selecting permissions. Do not expose this complexity in the first release; provide the six sensible presets above.
+
+---
+
+## 14. Team onboarding and invitation flow
+
+The construction manager's first-run flow should feel simple:
+
+```text
+Create company
+      ↓
+Company basics
+      ↓
+You're the Admin
+      ↓
+Invite your team
+      ↓
+Choose role
+      ↓
+Send invites
+      ↓
+Open TenderBase
+```
+
+Do not force the manager to configure permissions manually before they can use the CRM.
+
+### Invite screen
+
+```text
+Invite your team
+
+Email
+[ james@company.co.za             ]
+
+Role
+[ Sales User                    v ]
+
+              [ Send invite ]
+
++ Invite another
+```
+
+After sending:
+
+> **3 invitations sent**
+> James · Sales User · Pending
+> Sarah · Tender Manager · Accepted
+
+### Invite acceptance
+
+Email/deep link opens TenderBase → sign in/create account → confirm organisation → role is applied automatically.
+
+A user should never be able to select a privileged role for themselves.
+
+---
+
+## 15. Team directory
+
+The Team screen is deliberately small.
+
+```text
+TEAM
+
+[ Search people ]
+
+Sarah
+Tender Manager
+● Online
+
+James
+Sales User
+○ Offline
+
+Michael
+Estimator
+● Online
+```
+
+Tap a person:
+
+- profile
+- role
+- assigned tenders
+- assigned tasks
+- message
+
+The directory is not a social network. It exists to help the team get work done.
+
+Presence should use Supabase Realtime Presence for low-frequency online state rather than polling. citeturn0search1turn0search2
+
+---
+
+## 16. Team communication — chat is a workflow, not a separate social app
+
+Communication is important, but we should avoid building WhatsApp inside TenderBase.
+
+### Three communication levels
+
+#### 1. Organisation chat
+
+A simple company-wide channel:
+
+> **Team**
+
+For:
+- announcements
+- quick questions
+- coordination
+- tender alerts
+
+#### 2. Tender workspace chat
+
+Every active tender can have a contextual conversation:
+
+> **Municipal Offices**
+
+This is the most important chat.
+
+Messages stay attached to the tender so the discussion has business context.
+
+Example:
+
+> Sarah: Pricing schedule is ready.
+>
+> Michael: I still need the BOQ clarification.
+>
+> John: I uploaded the revised methodology.
+>
+> Sarah: Great — moving us to final review.
+
+#### 3. Direct messages
+
+One-to-one chat between members of the same organisation.
+
+Keep this secondary to tender-context communication.
+
+### Chat navigation
+
+Do not make Chat a permanent bottom tab.
+
+Entry points:
+
+- More → Team
+- Team member → Message
+- Tender workspace → Chat
+- Notification → open conversation
+
+This keeps the main app calm.
+
+---
+
+## 17. Chat data model
+
+Persist messages in Postgres so conversations survive reconnects and can be audited. Use Supabase Realtime for delivery/update UX rather than treating Broadcast itself as the permanent message store.
+
+Suggested minimum model:
+
+```text
+conversations
+  id
+  organisation_id
+  type: organisation | tender | direct
+  tender_id nullable
+  created_by
+  created_at
+  archived_at nullable
+
+conversation_members
+  conversation_id
+  user_id
+  joined_at
+  last_read_at
+  muted_at nullable
+
+messages
+  id
+  conversation_id
+  sender_id
+  body
+  created_at
+  edited_at nullable
+  deleted_at nullable
+  reply_to_id nullable
+  metadata jsonb
+
+message_attachments (later)
+  id
+  message_id
+  storage_path
+  file_name
+  mime_type
+  size_bytes
+  created_at
+```
+
+### Message delivery
+
+1. User sends message.
+2. Server/database validates organisation membership and `messages.send` permission.
+3. Message is persisted.
+4. Supabase Realtime broadcasts the database change to authorised participants.
+5. Recipients update instantly.
+6. Push notification is sent when the recipient is not actively viewing that conversation, subject to notification preferences.
+
+Supabase Realtime supports database changes, Broadcast and Presence, with private channels and RLS-based authorization suitable for organisation-scoped collaboration. citeturn0search0turn0search4
+
+### Important security rule
+
+A user's ability to subscribe to a conversation channel must be derived from actual organisation/conversation membership. Never use a predictable public channel and trust the client to behave.
+
+All exposed tables require RLS and least-privilege grants. Supabase explicitly recommends enabling RLS and testing allow/deny behaviour for every exposed table. citeturn0search3
+
+---
+
+## 18. Premium chat UX
+
+The chat screen should feel like TenderBase, not a generic messenger clone.
+
+Header:
+
+```text
+← Municipal Offices
+3 members · ● 2 online
+```
+
+Messages are compact, spacious and readable.
+
+Composer:
+
+```text
+[ Message the tender team...          ]  ➤
+```
+
+Quick contextual actions above the keyboard:
+
+**Mention · Attach · Task · Requirement**
+
+A powerful interaction:
+
+> **Convert to task**
+
+A message such as:
+
+> "Michael please complete pricing by 4pm tomorrow"
+
+can become a task with the message retained as context.
+
+AI can suggest this conversion later, but the initial release should keep it explicit and predictable.
+
+### Chat states
+
+- sending
+- sent
+- failed → retry
+- offline → queued only if offline messaging is explicitly supported later
+- unread
+- muted
+- archived
+
+Never show a message as sent when the server rejected it.
+
+---
+
+## 19. Notifications + communication
+
+Communication must connect to the existing notification system.
+
+Examples:
+
+**Team message**
+> Sarah sent a message in Municipal Offices
+
+**Mention**
+> James mentioned you in Municipal Offices
+
+**Task assignment**
+> Sarah assigned you: Complete pricing
+
+**Tender update**
+> Municipal Offices moved to Final Review
+
+**Deadline**
+> Municipal Offices closes tomorrow at 14:00
+
+The user controls notification categories and quiet hours. Native phone notifications are optional and permission-aware.
+
+Do not notify the whole organisation for every event. Default routing should be targeted:
+
+- direct message → recipient
+- mention → mentioned user
+- task assignment → assignee
+- tender activity → workspace members/watchers where appropriate
+- organisation announcement → organisation members
+
+---
+
+## 20. Organisation activity timeline
+
+The CRM needs an audit-friendly activity feed separate from chat.
+
+Example:
+
+```text
+Today
+
+10:42  Sarah assigned Pricing Schedule to Michael
+10:31  John uploaded Methodology.pdf
+09:58  Tender moved to Final Review
+09:12  Sarah added a note
+```
+
+Chat is conversation.
+
+Activity timeline is record history.
+
+Never mix them into one indistinguishable stream.
+
+This separation will make analytics, audit history and AI context much cleaner.
+
+---
+
+## 21. Organisation security model
+
+### Tenant isolation
+
+Every shared CRM record must carry `organisation_id`.
+
+Every access policy should verify:
+
+```text
+current user
+    ↓
+is member of organisation?
+    ↓
+has required permission?
+    ↓
+can access this specific record?
+```
+
+For tender workspaces, add record-level rules where needed:
+
+- all organisation members can see a tender if `crm.view` allows it
+- restricted tenders can be limited to assigned/team members
+- sensitive documents can have separate permissions later
+
+### No client-only authorization
+
+Hiding a button is not security.
+
+Every mutation must be enforced at the database/server layer with RLS and server-side authorization.
+
+### Role changes
+
+When an admin changes a user's role:
+
+- record an audit event
+- refresh authorization/session state
+- update the UI immediately
+- do not leave stale privileged controls active
+
+### Offboarding
+
+Removing a user:
+
+- revokes organisation membership
+- removes their access immediately
+- preserves their historical messages/activity/tasks
+- allows reassignment of open tasks/tenders
+
+Never delete business history just because an employee leaves.
+
+---
+
+## 22. Proposed organisation data model
+
+Do not overload `company_profiles` into becoming the organisation table. Preserve personal/company profile compatibility while introducing a shared tenant model.
+
+```text
+organisations
+  id
+  name
+  legal_name
+  owner_user_id
+  created_at
+  updated_at
+
+organisation_members
+  id
+  organisation_id
+  user_id
+  role
+  status: invited | active | suspended
+  invited_by
+  joined_at
+  created_at
+  updated_at
+
+organisation_invites
+  id
+  organisation_id
+  email
+  role
+  token_hash
+  invited_by
+  expires_at
+  accepted_at
+  created_at
+
+roles
+  id
+  organisation_id nullable
+  key
+  name
+  system_role boolean
+  created_at
+
+permissions
+  key
+  description
+
+role_permissions
+  role_id
+  permission_key
+
+activity_events
+  id
+  organisation_id
+  actor_user_id
+  event_type
+  entity_type
+  entity_id
+  metadata jsonb
+  created_at
+```
+
+For MVP, system roles can be stored as an enum/key rather than creating a fully configurable role-builder. The schema should leave room for custom roles later.
+
+### Membership constraint
+
+Enforce one active membership per `(organisation_id, user_id)`.
+
+If multi-organisation accounts are added later, the active organisation becomes a session/UI context rather than a second user account.
+
+---
+
+## 23. Role-aware UI without clutter
+
+The user should not see disabled controls everywhere.
+
+Instead:
+
+- If a user cannot perform an action, hide it unless discovering the capability is useful.
+- Admin-only controls live inside Team/Settings.
+- Tender actions show only actions the user can perform.
+- Read-only users get a clean reading experience.
+
+Example:
+
+Sales User sees:
+
+> **Move to Pursuing**
+
+Viewer does not see a disabled button saying:
+
+> 🔒 Move to Pursuing
+
+Premium UX means fewer irrelevant choices.
+
+---
+
+## 24. Organisation-aware Today screen
+
+Once a user belongs to an organisation, Today becomes personal **and** collaborative.
+
+Example:
+
+```text
+Good morning, Sarah
+
+ACME Construction
+
+NEEDS YOUR ATTENTION
+
+2 tasks due today
+1 tender needs a decision
+1 team mention
+
+NEXT UP
+
+Pricing schedule
+Michael · Municipal Offices
+Due 4:00 PM
+
+Tender decision
+R18.5M · Municipal Offices
+
+TEAM
+
+2 people online
+3 unread messages
+```
+
+The user still sees only a few things.
+
+The organisation complexity stays underneath.
+
+---
+
+## 25. Collaboration rollout
+
+### Phase C1 — Organisation foundation
+
+- organisation table
+- membership table
+- invitation flow
+- system roles
 - permissions
+- RLS policies
+- audit events
+- Team directory
+
+### Phase C2 — Shared CRM
+
+- organisation-owned opportunities
+- task assignment
+- requirements assignment
+- tender workspace membership
+- role-aware actions
+
+### Phase C3 — Communication
+
+- organisation channel
+- tender channels
+- direct messages
+- unread counts
+- mentions
+- online presence
+- push notifications
+
+### Phase C4 — Advanced collaboration
+
+- attachments
+- message replies/reactions
+- message search
+- custom roles
+- team analytics
+- external client/partner collaboration
+
+Do not start C3 until C1/C2 security is proven with RLS tests.
 
 ---
 
-## 13. Definition of done for the first CRM release
+## 26. Testing requirements before collaboration launch
 
-A user must be able to:
+### Authorization tests
 
-1. Discover a tender.
-2. Save it.
-3. Add it to the pipeline.
-4. Decide Bid / No-bid.
-5. See the next action.
-6. Create/complete the action.
-7. Track submission requirements.
-8. Receive a native deadline reminder.
-9. Mark the tender submitted.
-10. Record won/lost.
+For every shared table test:
 
-If those ten actions feel effortless, TenderBase has become a useful CRM. Anything else is secondary.
+- member can read allowed organisation data
+- non-member cannot read it
+- permitted role can mutate
+- unpermitted role cannot mutate
+- removed member loses access
+- restricted tender is inaccessible to unauthorised members
+- invite token cannot be reused after acceptance
+- expired invite cannot be accepted
+
+### Chat tests
+
+- member can join authorised conversation
+- non-member cannot subscribe/read
+- message persists exactly once
+- duplicate send is safely handled
+- failed send is visible
+- unread count updates correctly
+- marking read is scoped to the member
+- removed member cannot send
+
+### Native tests
+
+- push/local notification permission denied
+- app backgrounded
+- app killed and reopened
+- deep link into tender/chat
+- Android back from chat/tender
+- offline/online transitions
 
 ---
 
-## 14. Research basis
+## 27. Final product rule
 
-The navigation and hierarchy follow current platform guidance: Android treats navigation as a graph/back-stack problem and explicitly supports bottom navigation and predictable back behaviour; Apple recommends tabs for true top-level categories, persistent tab access, concise labels, and progressive disclosure rather than cramming content into a home screen. Android's current adaptive guidance also favours layouts that adapt across phone, tablet and larger surfaces. Capacitor is designed to expose native capabilities such as notifications through plugins while keeping a web application as the UI layer.
+TenderBase is not trying to be:
 
-The product therefore uses a small five-destination mobile hierarchy, push-style detail/workspace navigation, focused sheets for short tasks, and a native adapter layer instead of scattering device APIs through React screens.
+> Salesforce + Slack + Asana + Dropbox.
 
----
+It is:
 
-## 15. Non-goals for now
+> **A calm operating system for winning tenders.**
 
-Do **not** build yet:
+Communication exists because tender work requires people.
 
-- generic sales CRM pipelines unrelated to tenders
-- a full project-management system
-- chat/messaging between team members
-- complex invoicing/accounting
-- custom workflow builders
-- a huge analytics suite
-- calendar sync with every external provider
-- offline-first sync across every entity
+Roles exist because companies need controlled responsibility.
 
-These can be evaluated after the core tender workflow proves itself.
+Tasks exist because tenders have deadlines.
+
+Documents exist because submissions have requirements.
+
+AI exists because teams need help deciding and preparing.
+
+Every feature must strengthen the tender workflow.
+
+If a feature does not make it easier to **find, decide, prepare, submit or win**, it should not enter the core product.
