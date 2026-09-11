@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowUpRight, Bell, CalendarClock, CheckCircle2, ChevronRight, Clock3, FileSearch, Search, Sparkles, Target, TrendingUp, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, Bell, CalendarClock, CheckCircle2, ChevronRight, Clock3, FileSearch, Search, Sparkles, Target, TrendingUp, ShieldCheck, Menu } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { TenderWithUserState } from '@/types/tender';
+import { useDrawer } from '@/components/nav/DrawerProvider';
 
 interface Props {
   latest: TenderWithUserState[];
@@ -17,14 +18,20 @@ export function TodayExperience({ latest, closingSoon, stats, signedIn = false, 
   const name = firstName || 'there';
   const urgent = closingSoon.slice(0, 3);
   const newMatches = latest.slice(0, 4);
+  const { toggle, isOpen } = useDrawer();
 
   return (
     <main className="tb-today min-h-screen pb-[108px]">
       <section className="tb-today-hero">
         <div className="tb-today-topline">
-          <div>
-            <p className="text-[12px] font-medium text-white/55">{greeting()}</p>
-            <h1 className="mt-0.5 text-[25px] font-semibold tracking-[-0.045em] text-white">{signedIn ? `Good to see you, ${name}.` : 'Good to see you.'}</h1>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <button type="button" onClick={toggle} aria-label={isOpen ? 'Close menu' : 'Open menu'} aria-expanded={isOpen} className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px] border border-white/15 bg-white/10 text-white transition-colors hover:bg-white/15 active:scale-[.97] md:hidden">
+              {isOpen ? <span aria-hidden className="text-[20px] leading-none">×</span> : <Menu size={20} strokeWidth={2} aria-hidden />}
+            </button>
+            <div className="min-w-0">
+              <p className="text-[12px] font-medium text-white/55">{greeting()}</p>
+              <h1 className="mt-0.5 truncate text-[25px] font-semibold tracking-[-0.045em] text-white">{signedIn ? `Good to see you, ${name}.` : 'Good to see you.'}</h1>
+            </div>
           </div>
           <Link href="/alerts" aria-label="Alerts" className="tb-today-bell"><Bell size={19}/><span/></Link>
         </div>
