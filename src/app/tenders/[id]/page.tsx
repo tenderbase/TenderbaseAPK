@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { DirectTender } from './DirectTender';
 import { TenderDetailView } from './TenderDetailViewV2';
+import { TenderDecisionStrip } from './TenderDecisionStrip';
 import { getTender } from '@/lib/tenders';
 
 export const revalidate = 300;
@@ -23,11 +24,14 @@ export default async function TenderDetailPage({ params }: { params: { id: strin
   }
 
   return (
-    <TenderDetailView
-      tender={result.tender}
-      amendments={'amendments' in result.tender ? result.tender.amendments : []}
-      source={result.source}
-      via={result.via}
-    />
+    <>
+      <TenderDecisionStrip tender={result.tender} />
+      <TenderDetailView
+        tender={result.tender}
+        amendments={'amendments' in result.tender ? result.tender.amendments : []}
+        source={result.source}
+        via={result.via}
+      />
+    </>
   );
 }
