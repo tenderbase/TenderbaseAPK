@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { DirectTender } from './DirectTender';
-import { TenderDetailView } from './TenderDetailView';
+import { TenderDetailView } from './TenderDetailViewV2';
 import { getTender } from '@/lib/tenders';
 
 export const revalidate = 300;
@@ -19,10 +19,6 @@ export default async function TenderDetailPage({ params }: { params: { id: strin
   const result = await getTender(params.id);
   if (!result) notFound();
   if (result.source === 'error') {
-    // The server could not reach the ingestion API — it has no local copy of
-    // this id and cannot tell "gone" from "unreachable". The browser resolves
-    // it directly against the public upstream; `DirectTender` renders the real
-    // detail, a true not-found, or the honest outage state.
     return <DirectTender id={params.id} serverNotice={result.notice} />;
   }
 
