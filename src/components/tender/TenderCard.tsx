@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Building2, MapPin, Calendar, ChevronRight } from 'lucide-react';
+import { Building2, MapPin, Calendar, ChevronRight, Target } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatValue, formatDate, getStatus } from '@/lib/format';
 import { StatusBadge, CategoryBadge } from '@/components/ui/StatusBadge';
@@ -33,6 +33,7 @@ export function TenderCard({
 }: TenderCardProps) {
   const status = getStatus(tender);
   const closingLabel = formatDate(tender.closingDate);
+  const fitScore = tender.matchScore == null ? null : Math.max(0, Math.min(100, Math.round(tender.matchScore)));
 
   return (
     <div
@@ -48,17 +49,17 @@ export function TenderCard({
         className="absolute inset-0 z-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/40"
       />
 
-      {/*
-        Visual content sits above the overlay but lets pointer events through
-        to the link underneath — the whole card is one big tap target while the
-        bookmark button (z-10 sibling) stays independently clickable.
-      */}
       <div className="pointer-events-none relative z-[1]" aria-hidden>
         <div className="flex items-start gap-2.5">
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex flex-wrap items-center gap-1.5">
               <StatusBadge status={status} />
               <CategoryBadge category={tender.category} />
+              {fitScore != null && (
+                <span className="inline-flex items-center gap-1 rounded-md border border-ai-line bg-ai-bg px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.07em] text-ai">
+                  <Target size={10} aria-hidden /> Fit {fitScore}%
+                </span>
+              )}
             </div>
 
             <h3 className="text-card-title font-semibold tracking-[-0.02em] text-ink">
