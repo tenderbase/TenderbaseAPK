@@ -16,30 +16,30 @@ import { PlanChip } from '@/components/ui/PlanChip';
 interface Item { href: string; label: string; icon: LucideIcon; sub?: string; badge?: number; }
 
 const PRIMARY: Item[] = [
-  { href: '/', label: 'Today', icon: Home, sub: 'Your next best actions' },
-  { href: '/search', label: 'Find opportunities', icon: Search, sub: 'Ranked tender discovery' },
-  { href: '/research', label: 'Research', icon: BarChart3, sub: 'Buyers, awards & markets' },
-  { href: '/pipeline', label: 'Bid pipeline', icon: Bookmark, sub: 'Active opportunities' },
-  { href: '/saved', label: 'Watchlist', icon: Eye, sub: 'Monitor future opportunities' },
+  { href: '/', label: 'Today', icon: Home },
+  { href: '/search', label: 'Find', icon: Search },
+  { href: '/research', label: 'Research', icon: BarChart3 },
+  { href: '/pipeline', label: 'Pipeline', icon: Bookmark },
+  { href: '/saved', label: 'Watchlist', icon: Eye },
 ];
 
 const INTELLIGENCE: Item[] = [
-  { href: '/briefing', label: 'Market briefing', icon: Sparkles, sub: 'AI-prepared weekly review' },
-  { href: '/alerts', label: 'Alerts & changes', icon: Bell, sub: 'Deadlines and tender updates' },
-  { href: '/readiness', label: 'Tender readiness', icon: CheckCircle2, sub: 'CSD, TCS, B-BBEE & more' },
+  { href: '/briefing', label: 'Briefing', icon: Sparkles },
+  { href: '/alerts', label: 'Alerts', icon: Bell },
+  { href: '/readiness', label: 'Readiness', icon: CheckCircle2 },
 ];
 
 const ACCOUNT: Item[] = [
   { href: '/profile', label: 'Profile', icon: User },
-  { href: '/profile/company', label: 'Business profile', icon: Building2 },
-  { href: '/profile/preferences', label: 'Tender preferences', icon: SlidersHorizontal },
-  { href: '/profile/notifications', label: 'Notification settings', icon: Bell },
-  { href: '/pro', label: 'Subscription & Pro', icon: Crown },
+  { href: '/profile/company', label: 'Business', icon: Building2 },
+  { href: '/profile/preferences', label: 'Preferences', icon: SlidersHorizontal },
+  { href: '/profile/notifications', label: 'Notifications', icon: Bell },
+  { href: '/pro', label: 'Pro', icon: Crown },
 ];
 
 const SUPPORT: Item[] = [
-  { href: '/settings#help', label: 'Help centre', icon: HelpCircle },
-  { href: '/settings#privacy', label: 'Privacy & security', icon: ShieldCheck },
+  { href: '/settings#help', label: 'Help', icon: HelpCircle },
+  { href: '/settings#privacy', label: 'Privacy', icon: ShieldCheck },
 ];
 
 export function MenuDrawer() {
@@ -76,15 +76,15 @@ export function MenuDrawer() {
   return (
     <>
       <div aria-hidden onClick={close} className={cn('fixed inset-0 z-50 bg-navy-900/45 transition-opacity duration-200 motion-reduce:transition-none', isOpen ? 'opacity-100' : 'pointer-events-none opacity-0')} />
-      <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Menu" aria-hidden={!isOpen} className={cn('fixed inset-y-0 left-0 z-50 flex w-[302px] max-w-[86%] flex-col bg-white shadow-2xl', 'transition-transform duration-250 ease-out motion-reduce:transition-none', isOpen ? 'translate-x-0' : '-translate-x-full')}>
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Menu" aria-hidden={!isOpen} className={cn('fixed inset-y-0 left-0 z-50 flex w-[292px] max-w-[86%] flex-col bg-white shadow-2xl', 'transition-transform duration-250 ease-out motion-reduce:transition-none', isOpen ? 'translate-x-0' : '-translate-x-full')}>
         <div className="flex items-start justify-between border-b border-line px-5 pb-4 pt-[calc(env(safe-area-inset-top)+14px)]">
-          <div className="min-w-0"><span className="block text-[19px] font-bold tracking-[-0.04em] text-navy">Tender<span className="font-medium text-ink-2">Base</span></span><span className="mt-0.5 block text-caption text-ink-3">Your tender department in one app</span></div>
+          <div className="min-w-0"><span className="block text-[19px] font-bold tracking-[-0.04em] text-navy">Tender<span className="font-medium text-ink-2">Base</span></span><span className="mt-0.5 block text-caption text-ink-3">Your tender department</span></div>
           <button ref={closeButtonRef} type="button" onClick={close} aria-label="Close menu" className="-mr-1.5 -mt-1 flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px] bg-canvas text-ink"><X size={20} strokeWidth={2} aria-hidden /></button>
         </div>
 
         <Link href={session.signedIn ? '/profile' : '/login'} tabIndex={isOpen ? undefined : -1} className="flex items-center gap-3 border-b border-line px-5 py-3.5">
           <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[13px] bg-navy text-body-lg font-semibold text-white">{session.signedIn ? (session.initials ?? 'U') : <User size={20} strokeWidth={1.9} aria-hidden />}</span>
-          <span className="min-w-0 flex-1">{session.signedIn ? <><span className="block truncate text-[14.5px] font-semibold tracking-[-0.015em]">{session.name ?? 'Your account'}</span><span className="mt-px block truncate text-caption text-ink-3">{session.email ?? 'Signed in'}</span></> : <><span className="block truncate text-[14.5px] font-semibold tracking-[-0.015em]">Sign in or create an account</span><span className="mt-px block truncate text-caption text-ink-3">Save tenders and get matched — free</span></>}</span>
+          <span className="min-w-0 flex-1">{session.signedIn ? <><span className="block truncate text-[14.5px] font-semibold tracking-[-0.015em]">{session.name ?? 'Your account'}</span><span className="mt-px block truncate text-caption text-ink-3">{session.email ?? 'Signed in'}</span></> : <><span className="block truncate text-[14.5px] font-semibold tracking-[-0.015em]">Sign in</span><span className="mt-px block truncate text-caption text-ink-3">Save tenders and get matched</span></>}</span>
           <span className="flex shrink-0 items-center gap-1.5">{session.signedIn && <PlanChip tier={tier} />}<ChevronRight size={17} strokeWidth={2} className="text-ink-3" aria-hidden /></span>
         </Link>
 
@@ -96,8 +96,8 @@ export function MenuDrawer() {
         </nav>
 
         <div className="border-t border-line px-3 py-2.5 pb-[calc(env(safe-area-inset-bottom)+10px)]">
-          {tier !== 'pro' && <button type="button" tabIndex={isOpen ? undefined : -1} onClick={() => openUpgrade('ai-deep', { headline: 'Go Pro', why: 'One subscription unlocks the full TenderBase operating system.', bullets: ['Full tender matching and intelligence', 'Research, pipeline and deadline automation', 'AI-prepared daily and weekly work queues'] })} className="mb-2 flex w-full items-center gap-2.5 rounded-[11px] bg-pro px-3 py-2.5 text-left text-[#3d3205]"><Crown size={17} strokeWidth={2.2} className="shrink-0" aria-hidden /><span className="min-w-0 flex-1"><span className="block text-[13.5px] font-bold tracking-[-0.01em]">Go Pro</span><span className="block text-[10.5px] font-medium opacity-80">Unlock the owner tender department</span></span></button>}
-          {tier === 'pro' && trial.active && <Link href="/pro" tabIndex={isOpen ? undefined : -1} className="mb-2 flex w-full items-center gap-2.5 rounded-[11px] bg-pro-soft px-3 py-2.5 text-left text-[#7a610f]"><Crown size={17} strokeWidth={2.2} className="shrink-0" aria-hidden /><span className="min-w-0 flex-1"><span className="block text-[13px] font-bold tracking-[-0.01em]">Trial · {trial.daysLeft}d left</span><span className="block text-[10.5px] font-medium opacity-80">Manage in Pro hub</span></span></Link>}
+          {tier !== 'pro' && <button type="button" tabIndex={isOpen ? undefined : -1} onClick={() => openUpgrade('ai-deep', { headline: 'Go Pro', why: 'Unlock the full TenderBase operating system.', bullets: ['Full tender matching and intelligence', 'Research, pipeline and deadline automation', 'AI-prepared daily and weekly work queues'] })} className="mb-2 flex w-full items-center gap-2.5 rounded-[11px] bg-pro px-3 py-2.5 text-left text-[#3d3205]"><Crown size={17} strokeWidth={2.2} className="shrink-0" aria-hidden /><span className="min-w-0 flex-1"><span className="block text-[13.5px] font-bold tracking-[-0.01em]">Go Pro</span><span className="block text-[10.5px] font-medium opacity-80">Unlock more</span></span></button>}
+          {tier === 'pro' && trial.active && <Link href="/pro" tabIndex={isOpen ? undefined : -1} className="mb-2 flex w-full items-center gap-2.5 rounded-[11px] bg-pro-soft px-3 py-2.5 text-left text-[#7a610f]"><Crown size={17} strokeWidth={2.2} className="shrink-0" aria-hidden /><span className="min-w-0 flex-1"><span className="block text-[13px] font-bold tracking-[-0.01em]">Trial · {trial.daysLeft}d</span><span className="block text-[10.5px] font-medium opacity-80">Manage Pro</span></span></Link>}
           {session.signedIn && <button type="button" tabIndex={isOpen ? undefined : -1} disabled={signingOut} onClick={async () => { setSigningOut(true); try { if (isSupabaseConfigured) await createClient().auth.signOut(); } catch { /* non-fatal */ } finally { setSigningOut(false); close(); router.replace('/'); } }} className="flex w-full items-center gap-3 rounded-[11px] px-2.5 py-2.5 text-left text-urgent disabled:opacity-50"><LogOut size={19} strokeWidth={1.9} aria-hidden /><span className="text-[14.5px] font-semibold tracking-[-0.015em]">{signingOut ? 'Signing out…' : 'Sign out'}</span></button>}
           <p className="px-2.5 pb-0.5 pt-1 text-[10.5px] text-ink-3">TenderBase v1.4.2</p>
         </div>
