@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { X, Home, Search, Bookmark, Bell, BarChart3, User, Sparkles, Building2, SlidersHorizontal, Crown, HelpCircle, ShieldCheck, LogOut, ChevronRight, CheckCircle2, Eye, CalendarDays, type LucideIcon } from 'lucide-react';
+import { X, Home, Search, Bookmark, Bell, BarChart3, User, Sparkles, Building2, SlidersHorizontal, Crown, HelpCircle, ShieldCheck, LogOut, ChevronRight, CheckCircle2, Eye, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useDrawer } from '@/components/nav/DrawerProvider';
 import { createClient } from '@/lib/supabase';
@@ -24,7 +24,7 @@ const PRIMARY: Item[] = [
 ];
 
 const INTELLIGENCE: Item[] = [
-  { href: '/calendar', label: 'AI Calendar', icon: CalendarDays },
+  { href: '/calendar', label: 'AI Calendar', icon: Sparkles },
   { href: '/briefing', label: 'Briefing', icon: Sparkles },
   { href: '/alerts', label: 'Alerts', icon: Bell },
   { href: '/readiness', label: 'Readiness', icon: CheckCircle2 },
@@ -98,7 +98,7 @@ export function MenuDrawer() {
 
         <div className="border-t border-line px-3 py-2.5 pb-[calc(env(safe-area-inset-bottom)+10px)]">
           {tier !== 'pro' && <button type="button" tabIndex={isOpen ? undefined : -1} onClick={() => openUpgrade('ai-deep', { headline: 'Go Pro', why: 'Unlock the full TenderBase operating system.', bullets: ['Full tender matching and intelligence', 'Research, pipeline and deadline automation', 'AI-prepared daily and weekly work queues'] })} className="mb-2 flex w-full items-center gap-2.5 rounded-[11px] bg-pro px-3 py-2.5 text-left text-[#3d3205]"><Crown size={17} strokeWidth={2.2} className="shrink-0" aria-hidden /><span className="min-w-0 flex-1"><span className="block text-[13.5px] font-bold tracking-[-0.01em]">Go Pro</span><span className="block text-[10.5px] font-medium opacity-80">Unlock more</span></span></button>}
-          {tier === 'pro' && trial.active && <Link href="/pro" tabIndex={isOpen ? undefined : -1} className="mb-2 flex w-full items-center gap-2.5 rounded-[11px] bg-pro-soft px-3 py-2.5 text-left text-[#7a610f]"><Crown size={17} strokeWidth={2.2} className="shrink-0" aria-hidden /><span className="min-w-0 flex-1"><span className="block text-[13px] font-bold tracking-[-0.01em]">Trial · {trial.daysLeft}d</span><span className="block text-[10.5px] font-medium opacity-80">Manage Pro</span></Link>}
+          {tier === 'pro' && trial.active && <Link href="/pro" tabIndex={isOpen ? undefined : -1} className="mb-2 flex w-full items-center gap-2.5 rounded-[11px] bg-pro-soft px-3 py-2.5 text-left text-[#7a610f]"><Crown size={17} strokeWidth={2.2} className="shrink-0" aria-hidden /><span className="min-w-0 flex-1"><span className="block text-[13px] font-bold tracking-[-0.01em]">Trial · {trial.daysLeft}d</span><span className="block text-[10.5px] font-medium opacity-80">Manage Pro</span></span></Link>}
           {session.signedIn && <button type="button" tabIndex={isOpen ? undefined : -1} disabled={signingOut} onClick={async () => { setSigningOut(true); try { if (isSupabaseConfigured) await createClient().auth.signOut(); } catch { /* non-fatal */ } finally { setSigningOut(false); close(); router.replace('/'); } }} className="flex w-full items-center gap-3 rounded-[11px] px-2.5 py-2.5 text-left text-urgent disabled:opacity-50"><LogOut size={19} strokeWidth={1.9} aria-hidden /><span className="text-[14.5px] font-semibold tracking-[-0.015em]">{signingOut ? 'Signing out…' : 'Sign out'}</span></button>}
           <p className="px-2.5 pb-0.5 pt-1 text-[10.5px] text-ink-3">TenderBase v1.4.2</p>
         </div>
