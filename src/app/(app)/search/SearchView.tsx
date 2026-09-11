@@ -16,10 +16,7 @@ import { useTier } from '@/lib/tier-store';
 import { useUpgrade } from '@/components/tier/UpgradeSheet';
 import { paramsFromUrl, hasAny } from '@/lib/saved-searches';
 import { loadProfile } from '@/lib/company';
-import { fetchProfile } from '@/lib/company-remote';
 import { loadPreferences } from '@/lib/preferences';
-import { fetchPreferences } from '@/lib/preferences-remote';
-import { DEFAULT_PREFERENCES, preferencesEqual } from '@/types/preferences';
 import { scoreTender } from '@/lib/matches';
 import type { DataSource } from '@/lib/tenders';
 import type { SortOption, TenderWithUserState } from '@/types/tender';
@@ -48,26 +45,23 @@ export interface SearchViewProps {
   activeSort: SortOption;
 }
 
-function hasProfileMatchContext(profile: CompanyProfile | null): boolean {
-  if (!profile) return false;
-  return Boolean(profile.city?.trim() || profile.province?.trim() || profile.legalName?.trim());
-}
-
-function shouldAdoptRemotePreferences(local: TenderPreferences, remote: TenderPreferences): boolean {
-  // Search matching must not change after first paint because a remote row is
-  // newer. Local matching preferences are the stable client context. Remote
-  // preferences are only used when local storage is still at the app defaults.
-  return preferencesEqual(local, DEFAULT_PREFERENCES);
-}
-
 export function SearchView({ results, total, page, totalPages, source, notice, initialQuery, activeSort }: SearchViewProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState(initialQuery);
   const [bestFit, setBestFit] = useState(false);
-  const [profile, setProfile] = useState<CompanyProfile | null>(null);
-  const [preferences, setPreferences] = useState<TenderPreferences | null>(null);
+
+  // IMPORTANT: matching context is captured synchronously on mount. Do not
+  // start with null and hydrate it in an effect. That produced the visible
+  // "strong matches" pop-in/pop-out: the first paint had no context, then a
+  // local snapshot appeared, then another async state update could invalidate
+  // the scores. Find now uses one stable matching snapshot for the lifetime
+  // of this screen. Company/Preferences screens remain responsible for saving
+  // the same local data and syncing it to Supabase.
+  const [profile] = useState<CompanyProfile>(() => loadProfile());
+  const [preferences] = useState<TenderPreferences>(() => loadPreferences());
+
   const [direct, setDirect] = useState<{ results: TenderWithUserState[]; total: number; page: number; totalPages: number } | null>(null);
   const { session, isSaved, toggleSaved } = useSavedTenders();
   const searches = useSavedSearches();
@@ -77,31 +71,6 @@ export function SearchView({ results, total, page, totalPages, source, notice, i
   const currentSearch = paramsFromUrl(params);
   const thisSearchSaved = searches.isSaved(currentSearch);
   const searchCap = limit('saved-searches') ?? 3;
-
-  useEffect(() => {
-    let cancelled = false;
-    const localProfile = loadProfile();
-    const localPreferences = loadPreferences();
-
-    setProfile(localProfile);
-    setPreferences(localPreferences);
-
-    void Promise.all([fetchProfile(), fetchPreferences()]).then(([remoteProfile, remotePreferences]) => {
-      if (cancelled) return;
-
-      // Only hydrate from Supabase when local storage has no useful matching
-      // context. Once local profile data exists, never replace it with a late
-      // remote snapshot; this is what was causing the banner to disappear.
-      if (remoteProfile && !hasProfileMatchContext(localProfile)) {
-        setProfile(remoteProfile);
-      }
-
-      if (remotePreferences && shouldAdoptRemotePreferences(localPreferences, remotePreferences)) {
-        setPreferences(remotePreferences);
-      }
-    });
-    return () => { cancelled = true; };
-  }, []);
 
   const clearAll = () => {
     setQuery('');
