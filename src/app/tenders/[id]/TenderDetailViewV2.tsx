@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowUpRight, Bell, Bookmark, Building2, CalendarPlus, Check, ChevronLeft, Download, ExternalLink, FileText, History, MapPin, MoreHorizontal, Share2, Sparkles, Target } from 'lucide-react';
+import { ArrowUpRight, Bell, Bookmark, Building2, Check, ChevronLeft, Download, ExternalLink, FileText, History, MapPin, MoreHorizontal, Share2, Sparkles, Target } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { StatusBadge, CategoryBadge } from '@/components/ui/StatusBadge';
 import { DataSourceNotice } from '@/components/ui/DataSourceNotice';
@@ -16,8 +16,9 @@ import type { DataSource } from '@/lib/tenders';
 import type { TenderWithUserState } from '@/types/tender';
 
 export interface Amendment { id: string; field: string; from: string | null; to: string | null; detectedAt: string; }
-type Stage = 'Qualifying' | 'Pursuing' | 'Preparing' | 'Submitted';
-const STAGES: Stage[] = ['Qualifying', 'Pursuing', 'Preparing', 'Submitted'];
+type Stage = 'New match' | 'Review' | 'Bid planning' | 'Preparing' | 'Ready to submit' | 'Submitted' | 'Clarification / negotiation' | 'Award pending' | 'Won' | 'Lost';
+const STAGES: Stage[] = ['New match', 'Review', 'Bid planning', 'Preparing', 'Ready to submit', 'Submitted', 'Clarification / negotiation', 'Award pending', 'Won', 'Lost'];
+const LEGACY_STAGES = ['Qualifying', 'Pursuing', 'Preparing', 'Submitted'] as const;
 
 function Section({ title, eyebrow, count, children, className }: { title: string; eyebrow?: string; count?: number; children: React.ReactNode; className?: string }) {
   return <section className={cn('min-w-0 rounded-[18px] border border-line bg-white p-4 sm:p-5', className)}>
@@ -30,15 +31,39 @@ export function TenderDetailView({ tender, amendments, source, via }: { tender: 
   const { session, isSaved, toggleSaved } = useSavedTenders();
   const saved = isSaved(tender.id);
   const [followOpen, setFollowOpen] = useState(false);
-  const [stage, setStage] = useState<Stage>('Qualifying');
+  const [stage, setStage] = useState<Stage>('New match');
   const [aiOpen, setAiOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const remaining = tender.closingDate ? daysUntil(tender.closingDate) : null;
   const status = getStatus(tender);
 
-  useEffect(() => { try { const v = localStorage.getItem(`tenderbase-stage-${tender.id}`); if (v && STAGES.includes(v as Stage)) setStage(v as Stage); } catch {} }, [tender.id]);
-  function changeStage(next: Stage) { setStage(next); try { localStorage.setItem(`tenderbase-stage-${tender.id}`, next); } catch {} }
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(`tenderbase-stage-${tender.id}`);
+      if (v && STAGES.includes(v as Stage)) setStage(v as Stage);
+      else if (v && LEGACY_STAGES.includes(v as typeof LEGACY_STAGES[number])) setStage(fromLegacyStage(v as typeof LEGACY_STAGES[number]));
+      else {
+        const raw = localStorage.getItem('tenderbase-pipeline-stages-v2');
+        if (raw) {
+          const pipeline = JSON.parse(raw) as Record<string, Stage>;
+          if (pipeline[tender.id] && STAGES.includes(pipeline[tender.id])) setStage(pipeline[tender.id]);
+        }
+      }
+    } catch {}
+  }, [tender.id]);
+
+  function changeStage(next: Stage) {
+    setStage(next);
+    try {
+      localStorage.setItem(`tenderbase-stage-${tender.id}`, next);
+      const raw = localStorage.getItem('tenderbase-pipeline-stages-v2');
+      const pipeline = raw ? JSON.parse(raw) as Record<string, Stage> : {};
+      pipeline[tender.id] = next;
+      localStorage.setItem('tenderbase-pipeline-stages-v2', JSON.stringify(pipeline));
+    } catch {}
+  }
+
   async function share() {
     const url = window.location.href;
     if (navigator.share) { try { await navigator.share({ title: tender.title, url }); } catch {} return; }
@@ -70,12 +95,12 @@ export function TenderDetailView({ tender, amendments, source, via }: { tender: 
       </section>
 
       <Section eyebrow="Bid desk" title="Opportunity stage" className="mt-3">
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-blue-soft text-blue"><Target size={19}/></span><div className="min-w-0"><p className="text-[12px] text-ink-3">Current stage</p><p className="text-[15px] font-semibold text-ink">{stage}</p></div></div><select value={stage} onChange={e => changeStage(e.target.value as Stage)} aria-label="Change opportunity stage" className="h-10 w-full rounded-[10px] border border-line bg-white px-3 text-[12px] font-semibold text-navy outline-none sm:w-48">{STAGES.map(s => <option key={s}>{s}</option>)}</select></div>
-        <div className="mt-4 grid grid-cols-4 gap-1.5">{STAGES.map((s, i) => <button key={s} type="button" onClick={() => changeStage(s)} className="min-w-0 text-left"><span className={cn('block h-1.5 rounded-full', STAGES.indexOf(stage) >= i ? 'bg-blue' : 'bg-line')}/><span className="mt-1 block truncate text-[9px] text-ink-3">{s}</span></button>)}</div>
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-blue-soft text-blue"><Target size={19}/></span><div className="min-w-0"><p className="text-[12px] text-ink-3">Current stage</p><p className="text-[15px] font-semibold text-ink">{stage}</p></div></div><select value={stage} onChange={e => changeStage(e.target.value as Stage)} aria-label="Change opportunity stage" className="h-10 w-full rounded-[10px] border border-line bg-white px-3 text-[12px] font-semibold text-navy outline-none sm:w-56">{STAGES.map(s => <option key={s}>{s}</option>)}</select></div>
+        <div className="mt-4 grid grid-cols-5 gap-1.5 sm:grid-cols-10">{STAGES.map((s, i) => <button key={s} type="button" onClick={() => changeStage(s)} className="min-w-0 text-left"><span className={cn('block h-1.5 rounded-full', STAGES.indexOf(stage) >= i ? 'bg-blue' : 'bg-line')}/><span className="mt-1 block truncate text-[8px] text-ink-3 sm:text-[9px]">{s}</span></button>)}</div>
       </Section>
 
       <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)]"><div className="min-w-0 space-y-3">
-        <Section eyebrow="Next right move" title="Decide if this is worth pursuing" className="border-blue/15 bg-[linear-gradient(180deg,#fff,#fbfdff)]"><div className="rounded-[14px] border border-blue/12 bg-blue-soft/45 p-4"><div className="flex gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white text-blue"><Sparkles size={17}/></span><div className="min-w-0 flex-1"><p className="text-[14px] font-semibold text-ink">Review the qualification signals</p><p className="mt-1 text-[12.5px] leading-5 text-ink-2">Check scope, requirements, deadline and commercial fit before committing resources.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setAiOpen(true)} className="inline-flex h-10 items-center gap-1.5 rounded-[11px] bg-blue px-4 text-[12.5px] font-semibold text-white">Review with AI <ArrowUpRight size={14}/></button><button type="button" onClick={() => changeStage('Pursuing')} className="inline-flex h-10 items-center gap-1.5 rounded-[11px] border border-line bg-white px-4 text-[12.5px] font-semibold text-ink">Mark pursuing</button></div></div></div></div></Section>
+        <Section eyebrow="Next right move" title="Decide if this is worth pursuing" className="border-blue/15 bg-[linear-gradient(180deg,#fff,#fbfdff)]"><div className="rounded-[14px] border border-blue/12 bg-blue-soft/45 p-4"><div className="flex gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white text-blue"><Sparkles size={17}/></span><div className="min-w-0 flex-1"><p className="text-[14px] font-semibold text-ink">Review the qualification signals</p><p className="mt-1 text-[12.5px] leading-5 text-ink-2">Check scope, requirements, deadline and commercial fit before committing resources.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setAiOpen(true)} className="inline-flex h-10 items-center gap-1.5 rounded-[11px] bg-blue px-4 text-[12.5px] font-semibold text-white">Review with AI <ArrowUpRight size={14}/></button><button type="button" onClick={() => changeStage('Review')} className="inline-flex h-10 items-center gap-1.5 rounded-[11px] border border-line bg-white px-4 text-[12.5px] font-semibold text-ink">Move to review</button></div></div></div></div></Section>
         <TenderMatchRow tender={tender}/>{aiOpen && <AiSummaryPanel tender={tender} amendments={amendments}/>} {!aiOpen && <button type="button" onClick={() => setAiOpen(true)} className="w-full rounded-[14px] border border-line bg-white px-4 py-3 text-left text-[12px] font-semibold text-blue hover:bg-blue-soft">Open AI analysis</button>}
         <Section eyebrow="Source record" title="Overview"><dl className="grid min-w-0 gap-x-8 sm:grid-cols-2">{([['Tender number', tender.tenderNumber],['Category', tender.categoryRaw ?? tender.category],['Location', tender.locationFull ?? tender.location],['Published', tender.publishedDate ? formatDate(tender.publishedDate) : 'Not stated']] as const).map(([k,v]) => <div key={k} className="flex min-w-0 items-start justify-between gap-4 border-b border-line py-3"><dt className="shrink-0 text-[12.5px] text-ink-2">{k}</dt><dd className="min-w-0 max-w-[62%] break-words text-right text-[12.5px] font-semibold text-ink">{v}</dd></div>)}</dl>{tender.description && <div className="mt-4 border-t border-line pt-4"><p className="text-[11px] font-semibold uppercase tracking-[.1em] text-ink-3">Description</p><p className="mt-2 whitespace-pre-line break-words text-[13px] leading-6 text-ink-2">{tender.description}</p></div>}</Section>
         <Section eyebrow="Documents" title="Tender documents" count={tender.documents.length}>{tender.documents.length === 0 ? <p className="text-[12.5px] text-ink-3">No documents are available from the source record.</p> : <div className="space-y-2">{tender.documents.map(doc => <a key={doc.id} href={doc.url} target="_blank" rel="noopener noreferrer" className="flex min-w-0 items-center gap-3 rounded-[12px] border border-line bg-canvas p-3 hover:bg-white"><FileText size={17} className="shrink-0 text-ink-3"/><span className="min-w-0 flex-1 break-words text-[12px] font-semibold text-ink">{doc.name}</span><Download size={15} className="shrink-0 text-blue"/></a>)}</div>}</Section>
@@ -83,4 +108,11 @@ export function TenderDetailView({ tender, amendments, source, via }: { tender: 
     </div>
     <FollowSheet open={followOpen} onOpenChange={setFollowOpen} tender={tender}/>
   </main>;
+}
+
+function fromLegacyStage(stage: typeof LEGACY_STAGES[number]): Stage {
+  if (stage === 'Qualifying') return 'Review';
+  if (stage === 'Pursuing') return 'Bid planning';
+  if (stage === 'Preparing') return 'Preparing';
+  return 'Submitted';
 }
