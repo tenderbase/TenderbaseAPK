@@ -1,20 +1,21 @@
 import type { CompanyProfile } from '@/types/company';
 import type { TenderPreferences } from '@/types/preferences';
 import type { TenderWithUserState } from '@/types/tender';
-import type { FitAnalysis, FitSignal } from '@/types/analyst';
+import type { CommercialAnalysis, FitAnalysis, FitSignal } from '@/types/analyst';
 import { scoreTender } from '@/lib/matches';
 
 /**
  * Premium opportunity scoring facade.
  *
  * The existing deterministic matcher remains the source of truth for the
- * signals we can currently verify. This layer adds explicit confidence,
- * deadline/document context and a stable contract for the future document/AI
- * analyst. It deliberately does not invent CIDB, B-BBEE or monetary matches
- * when the tender has not published those facts.
+ * signals we can currently verify. Commercial value is deliberately NOT a
+ * scoring axis: eTenders commonly does not publish tender/contract amounts as
+ * a standard field, so an absent value is normal and must never reduce fit.
+ * Commercial intelligence is kept separate and can become richer when tender
+ * documents provide pricing/BOQ/budget evidence.
  */
 
-const ENGINE_VERSION = 'opportunity-v1';
+const ENGINE_VERSION = 'opportunity-v2-no-value-penalty';
 
 export interface OpportunityContext {
   profile?: Partial<CompanyProfile> | null;
@@ -37,6 +38,41 @@ function signal(
   points?: number,
 ): FitSignal {
   return { kind, label, detail, impact, ...(points === undefined ? {} : { points }) };
+}
+
+/**
+ * Commercial state is intentionally separate from Fit Score. A null tender
+ * value is the expected eTenders state and therefore returns not_disclosed,
+ * not a warning and not a negative score.
+ */
+export function getCommercialAnalysis(tender: TenderWithUserState): CommercialAnalysis {
+  if (tender.valueCents != null) {
+    return {
+      valueStatus: 'published',
+      publishedValueCents: tender.valueCents,
+      contractPeriod: null,
+      pricingInformation: null,
+      budgetIndication: null,
+      attractiveness: 'not_assessable',
+      confidence: 'high',
+      notes: ['Tender value is explicitly published in the tender record.'],
+    };
+  }
+
+  return {
+    valueStatus: 'not_disclosed',
+    publishedValueCents: null,
+    contractPeriod: null,
+    pricingInformation: null,
+    budgetIndication: null,
+    attractiveness: 'not_assessable',
+    confidence: 'not_available',
+    notes: [
+      'Tender/contract value is not disclosed in the standard tender record.',
+      'This does not reduce the Tender Fit Score.',
+      'Document analysis may later extract commercial signals such as BOQ, quantities, pricing schedules, contract duration or budget references.',
+    ],
+  };
 }
 
 /**
@@ -112,7 +148,7 @@ export function rankOpportunities(
   const minimumScore = options.minimumScore ?? 15;
 
   return tenders
-    .map((tender) => ({ tender, fit: analyseOpportunity(tender, context) }))
+    .map((tender) => ({ tender, fit: analyseOpportunity(tender, context), commercial: getCommercialAnalysis(tender) }))
     .filter(({ fit }) => fit.score >= minimumScore)
     .sort((a, b) => b.fit.score - a.fit.score || a.tender.closingDate.localeCompare(b.tender.closingDate))
     .slice(0, limit);
