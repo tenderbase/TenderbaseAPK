@@ -1,275 +1,167 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Bell,
-  BellRing,
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
-  CheckCircle2,
-  Clock3,
-  Crown,
-  FileText,
-  Plus,
-  Save,
-  Sparkles,
-  Trash2,
+  AlertTriangle, Bell, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, Crown,
+  FileText, MapPin, Pencil, Plus, Sparkles, Trash2, X,
 } from 'lucide-react';
 import { MenuButton } from '@/components/nav/MenuButton';
-import { useTier } from '@/lib/tier-store';
 import { fetchCalendarEvents, saveCalendarEvent, deleteCalendarEvent } from '@/lib/calendar-remote';
-import { REMINDER_PRESETS, type CalendarEvent } from '@/lib/ai-calendar';
+import { EVENT_TYPES, REMINDER_PRESETS, type CalendarEvent, type CalendarEventType, type CalendarPriority } from '@/lib/ai-calendar';
 import { cancelCalendarAlarm, scheduleCalendarAlarm } from '@/lib/native-alarms';
 
-function localDateTime(days = 1) {
-  const d = new Date(Date.now() + days * 86400000);
-  d.setMinutes(0, 0, 0);
+type View = 'month' | 'agenda';
+
+const PRIORITIES: Array<{ value: CalendarPriority; label: string }> = [
+  { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'critical', label: 'Critical' },
+];
+
+function key(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+function monthStart(date: Date) { return new Date(date.getFullYear(), date.getMonth(), 1); }
+function monthDays(date: Date) {
+  const first = monthStart(date); const start = new Date(first); start.setDate(1 - ((first.getDay() + 6) % 7));
+  return Array.from({ length: 42 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+}
+function localInput(days = 1) {
+  const d = new Date(Date.now() + days * 86400000); d.setMinutes(0, 0, 0);
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
-
-function dayKey(date: Date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+function eventLabel(type?: CalendarEventType) { return EVENT_TYPES.find((t) => t.value === type)?.short ?? 'Reminder'; }
+function priorityClass(priority?: CalendarPriority) {
+  return priority === 'critical' ? 'bg-red-50 text-red-700 border-red-200' : priority === 'high' ? 'bg-amber-50 text-amber-700 border-amber-200' : priority === 'low' ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-blue-50 text-blue-700 border-blue-200';
 }
-
-function dateStrip() {
-  const today = new Date();
-  const start = new Date(today);
-  start.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-  return Array.from({ length: 7 }, (_, i) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + i);
-    return date;
-  });
-}
-
-function formatMonth(date: Date) {
-  return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-}
+function localDateLabel(date: Date) { return date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }); }
 
 export default function CalendarPage() {
-  const { can } = useTier();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [title, setTitle] = useState('');
-  const [startsAt, setStartsAt] = useState(localDateTime());
-  const [reminderMinutes, setReminderMinutes] = useState(60);
-  const [alarmEnabled, setAlarmEnabled] = useState(true);
+  const [selected, setSelected] = useState(new Date());
+  const [view, setView] = useState<View>('month');
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const reminderRef = useRef<HTMLElement>(null);
+  const [notice, setNotice] = useState('');
+  const [title, setTitle] = useState('');
+  const [type, setType] = useState<CalendarEventType>('reminder');
+  const [priority, setPriority] = useState<CalendarPriority>('medium');
+  const [startsAt, setStartsAt] = useState(localInput());
+  const [endsAt, setEndsAt] = useState('');
+  const [location, setLocation] = useState('');
+  const [notes, setNotes] = useState('');
+  const [prep, setPrep] = useState(0);
+  const [reminder, setReminder] = useState(60);
+  const [alarm, setAlarm] = useState(true);
+  const [allDay, setAllDay] = useState(false);
 
   useEffect(() => { void fetchCalendarEvents().then(setEvents); }, []);
 
-  const upcoming = useMemo(
-    () => events.filter((e) => new Date(e.startsAt).getTime() >= Date.now()).sort((a, b) => a.startsAt.localeCompare(b.startsAt)).slice(0, 12),
-    [events],
-  );
-  const days = useMemo(() => dateStrip(), []);
-  const monthLabel = formatMonth(selectedDate);
-  const eventDays = useMemo(() => new Set(events.map((event) => dayKey(new Date(event.startsAt)))), [events]);
+  const days = useMemo(() => monthDays(selected), [selected]);
+  const todayKey = key(new Date());
+  const selectedKey = key(selected);
+  const selectedEvents = useMemo(() => events.filter((e) => key(new Date(e.startsAt)) === selectedKey).sort((a, b) => a.startsAt.localeCompare(b.startsAt)), [events, selectedKey]);
+  const upcoming = useMemo(() => events.filter((e) => new Date(e.startsAt).getTime() >= Date.now() && e.status !== 'cancelled').sort((a, b) => a.startsAt.localeCompare(b.startsAt)), [events]);
+  const deadlines = useMemo(() => upcoming.filter((e) => e.eventType === 'tender_deadline' || e.eventType === 'submission'), [upcoming]);
+  const urgent = useMemo(() => deadlines.filter((e) => new Date(e.startsAt).getTime() - Date.now() < 7 * 86400000), [deadlines]);
+  const prepMinutes = useMemo(() => upcoming.reduce((sum, e) => sum + (e.preparationMinutes ?? 0), 0), [upcoming]);
 
-  async function addEvent() {
-    if (!title.trim()) return;
-    setSaving(true); setMessage('');
-    const event: CalendarEvent = {
-      id: crypto.randomUUID(),
-      title: title.trim(),
-      startsAt: new Date(startsAt).toISOString(),
-      reminderMinutes,
-      alarmEnabled,
-      source: 'manual',
-      notes: 'TenderBase AI Calendar reminder',
-    };
+  function openNew(prefillType: CalendarEventType = 'reminder') {
+    setEditing(null); setTitle(''); setType(prefillType); setPriority(prefillType === 'tender_deadline' || prefillType === 'submission' ? 'critical' : 'medium');
+    const date = new Date(selected); date.setHours(9, 0, 0, 0); setStartsAt(new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+    setEndsAt(''); setLocation(''); setNotes(''); setPrep(0); setReminder(prefillType === 'tender_deadline' ? 1440 : 60); setAlarm(true); setAllDay(false); setShowForm(true); setNotice('');
+  }
+  function openEdit(event: CalendarEvent) {
+    setEditing(event); setTitle(event.title); setType(event.eventType ?? 'reminder'); setPriority(event.priority ?? 'medium');
+    const d = new Date(event.startsAt); setStartsAt(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+    setEndsAt(event.endsAt ? new Date(new Date(event.endsAt).getTime() - new Date(event.endsAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '');
+    setLocation(event.location ?? ''); setNotes(event.notes ?? ''); setPrep(event.preparationMinutes ?? 0); setReminder(event.reminderMinutes); setAlarm(event.alarmEnabled); setAllDay(event.allDay ?? false); setShowForm(true); setNotice('');
+  }
+  async function save() {
+    if (!title.trim()) return; setSaving(true); setNotice('');
+    const event: CalendarEvent = { id: editing?.id ?? crypto.randomUUID(), title: title.trim(), startsAt: new Date(startsAt).toISOString(), endsAt: endsAt ? new Date(endsAt).toISOString() : null, reminderMinutes: reminder, alarmEnabled: alarm, tenderId: editing?.tenderId ?? null, source: editing?.source ?? 'manual', eventType: type, priority, status: editing?.status ?? 'planned', location: location.trim() || null, notes: notes.trim() || null, allDay, preparationMinutes: prep, colorKey: priority === 'critical' ? 'red' : priority === 'high' ? 'amber' : 'blue' };
     const ok = await saveCalendarEvent(event);
-    if (ok) {
-      setEvents((prev) => [...prev, event].sort((a, b) => a.startsAt.localeCompare(b.startsAt)));
-      if (alarmEnabled) {
-        const scheduled = await scheduleCalendarAlarm(event);
-        setMessage(scheduled ? 'Saved — your phone alarm is scheduled.' : 'Saved. Phone alarm will activate when native notifications are available.');
-      } else setMessage('Saved to your TenderBase calendar.');
-      setTitle('');
-    } else setMessage('Sign in to save calendar events.');
-    setSaving(false);
+    if (!ok) { setNotice('Sign in to save calendar events.'); setSaving(false); return; }
+    setEvents((prev) => [...prev.filter((e) => e.id !== event.id), event].sort((a, b) => a.startsAt.localeCompare(b.startsAt)));
+    await cancelCalendarAlarm(event.id); if (alarm) await scheduleCalendarAlarm(event);
+    setShowForm(false); setEditing(null); setNotice('Saved.'); setSaving(false);
   }
-
-  async function removeEvent(event: CalendarEvent) {
-    await cancelCalendarAlarm(event.id);
-    await deleteCalendarEvent(event.id);
-    setEvents((prev) => prev.filter((e) => e.id !== event.id));
+  async function remove(event: CalendarEvent) {
+    await cancelCalendarAlarm(event.id); await deleteCalendarEvent(event.id); setEvents((prev) => prev.filter((e) => e.id !== event.id)); setNotice('Event removed.');
   }
-
-  function scrollToReminder() {
-    reminderRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  async function markComplete(event: CalendarEvent) {
+    const updated = { ...event, status: 'completed' as const }; const ok = await saveCalendarEvent(updated); if (ok) setEvents((prev) => prev.map((e) => e.id === event.id ? updated : e));
+  }
+  async function buildPlan() {
+    const targets = deadlines.filter((e) => !events.some((x) => x.id !== e.id && x.tenderId === e.tenderId && x.eventType === 'task' && x.title.startsWith('AI prep'))).slice(0, 4);
+    if (!targets.length) { setNotice('No new tender preparation blocks are needed.'); return; }
+    let added = 0;
+    for (const target of targets) {
+      const when = new Date(target.startsAt); when.setDate(when.getDate() - 2); when.setHours(9, 0, 0, 0);
+      if (when.getTime() <= Date.now()) continue;
+      const prepEvent: CalendarEvent = { id: crypto.randomUUID(), title: `AI prep · ${target.title}`, startsAt: when.toISOString(), endsAt: new Date(when.getTime() + Math.max(60, target.preparationMinutes ?? 60) * 60000).toISOString(), reminderMinutes: 60, alarmEnabled: true, tenderId: target.tenderId ?? null, source: 'ai', eventType: 'task', priority: target.priority === 'critical' ? 'high' : 'medium', status: 'planned', notes: 'AI-generated planning block. Verify the tender requirements and adjust before relying on it.', allDay: false, preparationMinutes: 0, colorKey: 'violet' };
+      if (await saveCalendarEvent(prepEvent)) { setEvents((prev) => [...prev, prepEvent].sort((a, b) => a.startsAt.localeCompare(b.startsAt))); added += 1; }
+    }
+    setNotice(added ? `${added} preparation block${added === 1 ? '' : 's'} added.` : 'No suitable future planning slots found.');
   }
 
   return (
-    <main className="min-h-screen bg-[#f5f8fd] pb-32 md:pb-10">
-      <header className="relative overflow-hidden bg-[#0d1729] px-5 pb-8 pt-5 text-white md:px-8 md:pt-7">
-        <div className="absolute -right-24 -top-32 h-80 w-80 rounded-full bg-blue-500/20 blur-3xl" />
-        <div className="absolute left-1/3 top-20 h-52 w-52 rounded-full bg-violet-500/15 blur-3xl" />
-        <div className="relative mx-auto max-w-5xl">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <MenuButton className="md:hidden text-white" />
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 shadow-lg shadow-blue-500/20">
-                <CalendarDays size={29} strokeWidth={1.8} />
-              </div>
-              <div>
-                <h1 className="text-[30px] font-bold leading-none tracking-[-0.045em]">AI <span className="font-semibold">Calendar</span></h1>
-                <p className="mt-1 text-[13px] font-medium text-blue-100/85">Plan. Prepare. Win.</p>
-              </div>
-            </div>
-            <div className="hidden items-center gap-2 rounded-full border border-amber-300/80 px-4 py-2 text-[13px] font-semibold text-amber-200 sm:flex">
-              <Crown size={15} fill="currentColor" /> TenderBase Pro
-            </div>
+    <main className="min-h-screen bg-[#f5f8fd] pb-28 md:pb-10">
+      <header className="bg-[#0d1729] px-5 pb-6 pt-5 text-white md:px-8 md:pt-7">
+        <div className="mx-auto max-w-6xl">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3"><MenuButton className="md:hidden text-white" /><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-violet-500"><CalendarDays size={25} /></div><div className="min-w-0"><div className="flex items-center gap-2"><h1 className="truncate text-[25px] font-bold tracking-[-0.04em]">AI Calendar</h1><span className="hidden rounded-full border border-amber-300/60 px-2 py-0.5 text-[10px] font-bold text-amber-200 sm:inline-flex"><Crown size={11} className="mr-1" /> PRO</span></div><p className="text-[12px] text-blue-100/70">Your tender operating schedule</p></div></div>
+            <button type="button" onClick={() => openNew()} className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-white px-3.5 text-[12px] font-bold text-[#12213b]"><Plus size={17} /> Add</button>
           </div>
-
-          <div className="mt-7 rounded-[24px] border border-white/15 bg-gradient-to-r from-blue-600/30 via-blue-700/20 to-violet-600/35 p-4 shadow-2xl shadow-black/20 backdrop-blur md:p-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-blue-200">
-                <Sparkles size={26} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[16px] font-bold">Smarter Planning</p>
-                <p className="mt-1 max-w-xl text-[12.5px] leading-[18px] text-blue-50/80">Let AI help you stay on top of tender deadlines, meetings and important dates.</p>
-              </div>
-              <button type="button" onClick={scrollToReminder} className="hidden shrink-0 items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-violet-500 px-5 py-3 text-[13px] font-bold shadow-lg shadow-blue-900/30 sm:flex">
-                <Sparkles size={15} /> Ask AI <ChevronRight size={16} />
-              </button>
-            </div>
+          <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              ['Deadlines', deadlines.length, urgent.length ? `${urgent.length} urgent` : 'On track'],
+              ['Next 7 days', events.filter((e) => { const t = new Date(e.startsAt).getTime(); return t >= Date.now() && t <= Date.now() + 7 * 86400000; }).length, 'planned'],
+              ['Prep time', `${Math.round(prepMinutes / 60)}h`, 'scheduled'],
+              ['Today', events.filter((e) => key(new Date(e.startsAt)) === todayKey).length, 'events'],
+            ].map(([label, value, sub]) => <div key={String(label)} className="rounded-2xl border border-white/10 bg-white/5 p-3"><p className="text-[10px] font-semibold uppercase tracking-[.06em] text-blue-100/55">{label}</p><p className="mt-1 text-[20px] font-bold">{value}</p><p className="text-[10px] text-blue-100/55">{sub}</p></div>)}
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl px-5 md:px-8">
-        <section className="-mt-4 overflow-hidden rounded-[24px] border border-white bg-white p-5 shadow-[0_12px_40px_rgba(15,35,70,0.08)] md:p-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[22px] font-bold tracking-[-0.03em] text-[#12213b]">{monthLabel}</h2>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setSelectedDate(new Date())} className="rounded-full border border-[#dbe4f0] px-4 py-2 text-[12px] font-semibold text-[#23406c]">Today</button>
-              <button type="button" aria-label="Previous week" onClick={() => setSelectedDate((d) => new Date(d.getTime() - 7 * 86400000))} className="hidden h-9 w-9 items-center justify-center rounded-full hover:bg-[#f2f6fb] sm:flex"><ChevronLeft size={18} /></button>
-              <button type="button" aria-label="Next week" onClick={() => setSelectedDate((d) => new Date(d.getTime() + 7 * 86400000))} className="hidden h-9 w-9 items-center justify-center rounded-full hover:bg-[#f2f6fb] sm:flex"><ChevronRight size={18} /></button>
+      <div className="mx-auto max-w-6xl px-4 md:px-8">
+        {notice && <div className="mt-4 flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5 text-[12px] font-medium text-blue-800"><Check size={15} />{notice}<button type="button" className="ml-auto" onClick={() => setNotice('')} aria-label="Dismiss"><X size={15} /></button></div>}
+
+        <section className="mt-4 rounded-2xl border border-white bg-white p-3 shadow-[0_10px_35px_rgba(15,35,70,.07)] md:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2"><button type="button" onClick={() => setSelected(new Date(selected.getFullYear(), selected.getMonth() - 1, 1))} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200"><ChevronLeft size={17} /></button><h2 className="min-w-[150px] text-center text-[18px] font-bold text-[#12213b]">{selected.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h2><button type="button" onClick={() => setSelected(new Date(selected.getFullYear(), selected.getMonth() + 1, 1))} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200"><ChevronRight size={17} /></button><button type="button" onClick={() => setSelected(new Date())} className="rounded-lg border border-slate-200 px-3 py-2 text-[11px] font-semibold text-slate-700">Today</button></div>
+            <div className="flex rounded-lg bg-slate-100 p-1"><button type="button" onClick={() => setView('month')} className={`rounded-md px-3 py-1.5 text-[11px] font-semibold ${view === 'month' ? 'bg-white shadow text-[#12213b]' : 'text-slate-500'}`}>Month</button><button type="button" onClick={() => setView('agenda')} className={`rounded-md px-3 py-1.5 text-[11px] font-semibold ${view === 'agenda' ? 'bg-white shadow text-[#12213b]' : 'text-slate-500'}`}>Agenda</button></div>
+          </div>
+
+          {view === 'month' ? <>
+            <div className="mt-4 grid grid-cols-7 border-b border-slate-100">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => <div key={d} className="py-2 text-center text-[10px] font-bold uppercase tracking-[.05em] text-slate-400">{d}</div>)}</div>
+            <div className="grid grid-cols-7 border-l border-t border-slate-100">
+              {days.map((date) => { const dk = key(date); const dayEvents = events.filter((e) => key(new Date(e.startsAt)) === dk).slice(0, 3); const inMonth = date.getMonth() === selected.getMonth(); return <button key={dk} type="button" onClick={() => setSelected(date)} className={`min-h-[76px] overflow-hidden border-b border-r border-slate-100 p-1.5 text-left ${inMonth ? 'bg-white' : 'bg-slate-50/70'} ${dk === selectedKey ? 'ring-2 ring-inset ring-blue-400' : ''}`}><span className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${dk === todayKey ? 'bg-blue-600 text-white' : inMonth ? 'text-slate-700' : 'text-slate-300'}`}>{date.getDate()}</span><div className="mt-1 space-y-0.5">{dayEvents.map((e) => <span key={e.id} className={`block truncate rounded px-1 py-0.5 text-[8px] font-semibold ${priorityClass(e.priority)}`}>{e.title}</span>)}</div></button>; })}
             </div>
-          </div>
-
-          <div className="mt-5 grid grid-cols-7 divide-x divide-[#e7edf5]">
-            {days.map((date) => {
-              const isToday = dayKey(date) === dayKey(new Date());
-              const isSelected = dayKey(date) === dayKey(selectedDate);
-              const hasEvent = eventDays.has(dayKey(date));
-              return (
-                <button key={date.toISOString()} type="button" onClick={() => setSelectedDate(date)} className="group flex min-w-0 flex-col items-center py-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[#7385a2] sm:text-[11px]">{date.toLocaleDateString(undefined, { weekday: 'short' })}</span>
-                  <span className={`mt-2 flex h-10 w-10 items-center justify-center rounded-xl text-[16px] font-bold transition ${isSelected ? 'bg-gradient-to-br from-blue-500 to-violet-500 text-white shadow-md shadow-blue-500/25' : isToday ? 'bg-[#eef5ff] text-[#1769e0]' : 'text-[#12213b] group-hover:bg-[#f4f7fb]'}`}>{date.getDate()}</span>
-                  <span className={`mt-2 h-1.5 w-1.5 rounded-full ${hasEvent ? 'bg-blue-500' : 'bg-transparent'}`} />
-                </button>
-              );
-            })}
-          </div>
+          </> : <div className="mt-4 divide-y divide-slate-100">{upcoming.slice(0, 20).map((e) => <EventRow key={e.id} event={e} onEdit={openEdit} onDelete={remove} onComplete={markComplete} />)}{upcoming.length === 0 && <Empty />}</div>}
         </section>
 
-        <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: 'Add Event', sub: 'Create a calendar event', icon: CalendarDays, iconClass: 'bg-blue-50 text-blue-600', action: scrollToReminder },
-            { label: 'Add Reminder', sub: 'Set a custom alarm', icon: Bell, iconClass: 'bg-amber-50 text-amber-600', action: scrollToReminder },
-            { label: 'AI Plan', sub: 'Build your preparation plan', icon: Sparkles, iconClass: 'bg-violet-50 text-violet-600', action: scrollToReminder },
-            { label: 'Add Tender', sub: 'Save a tender to calendar', icon: FileText, iconClass: 'bg-emerald-50 text-emerald-600', action: scrollToReminder },
-          ].map(({ label, sub, icon: Icon, iconClass, action }) => (
-            <button key={label} type="button" onClick={action} className="rounded-[20px] border border-white bg-white p-4 text-left shadow-[0_8px_28px_rgba(15,35,70,0.055)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(15,35,70,0.09)]">
-              <span className={`flex h-11 w-11 items-center justify-center rounded-2xl ${iconClass}`}><Icon size={21} /></span>
-              <p className="mt-3 text-[14px] font-bold text-[#12213b]">{label}</p>
-              <p className="mt-1 text-[10.5px] leading-[15px] text-[#7b8da7]">{sub}</p>
-            </button>
-          ))}
-        </section>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_.65fr]">
+          <section className="rounded-2xl border border-white bg-white p-4 shadow-[0_8px_28px_rgba(15,35,70,.055)] md:p-5">
+            <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.07em] text-blue-600">Selected day</p><h2 className="mt-1 text-[20px] font-bold text-[#12213b]">{localDateLabel(selected)}</h2></div><button type="button" onClick={() => openNew()} className="flex h-9 items-center gap-1.5 rounded-lg bg-[#12213b] px-3 text-[11px] font-bold text-white"><Plus size={15} /> Event</button></div>
+            <div className="mt-4 space-y-2">{selectedEvents.map((e) => <EventRow key={e.id} event={e} onEdit={openEdit} onDelete={remove} onComplete={markComplete} />)}{selectedEvents.length === 0 && <Empty />}</div>
+          </section>
 
-        <section ref={reminderRef} className="mt-6 overflow-hidden rounded-[24px] bg-gradient-to-br from-[#102039] via-[#142c52] to-[#222052] p-5 text-white shadow-[0_18px_45px_rgba(13,30,60,0.2)] md:p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-500 shadow-lg shadow-blue-500/20"><BellRing size={23} /></div>
-            <div className="min-w-0 flex-1">
-              <h2 className="text-[18px] font-bold">Add Reminder</h2>
-              <p className="mt-1 text-[12px] text-blue-100/70">Set a smart reminder with custom time, priority and notification type.</p>
-            </div>
-            <ChevronRight size={22} className="text-white/50" />
-          </div>
-
-          <div className="mt-5 grid gap-3 md:grid-cols-[1.5fr_1fr_1fr]">
-            <label className="flex items-center gap-2 rounded-[14px] border border-white/15 bg-white/5 px-3.5 py-3">
-              <FileText size={16} className="text-blue-200" />
-              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Tender closing date" className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-blue-100/45" />
-            </label>
-            <label className="flex items-center gap-2 rounded-[14px] border border-white/15 bg-white/5 px-3.5 py-3">
-              <CalendarDays size={16} className="text-blue-200" />
-              <input type="date" value={startsAt.slice(0, 10)} onChange={(e) => setStartsAt(`${e.target.value}T${startsAt.slice(11, 16)}`)} className="min-w-0 flex-1 bg-transparent text-[12px] text-white outline-none" />
-            </label>
-            <label className="flex items-center gap-2 rounded-[14px] border border-white/15 bg-white/5 px-3.5 py-3">
-              <Clock3 size={16} className="text-blue-200" />
-              <input type="time" value={startsAt.slice(11, 16)} onChange={(e) => setStartsAt(`${startsAt.slice(0, 10)}T${e.target.value}`)} className="min-w-0 flex-1 bg-transparent text-[12px] text-white outline-none" />
-            </label>
-          </div>
-
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="flex cursor-pointer items-center justify-between rounded-[14px] border border-white/10 bg-white/5 px-4 py-3">
-              <span className="flex items-center gap-3 text-[12.5px] font-medium"><span className={`relative h-6 w-11 rounded-full transition ${alarmEnabled ? 'bg-blue-500' : 'bg-white/20'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition ${alarmEnabled ? 'left-6' : 'left-1'}`} /></span> Phone alarm when available</span>
-              <input type="checkbox" checked={alarmEnabled} onChange={(e) => setAlarmEnabled(e.target.checked)} className="sr-only" />
-            </label>
-            <label className="flex items-center gap-3 rounded-[14px] border border-white/10 bg-white/5 px-4 py-3">
-              <Bell size={17} className="text-red-300" />
-              <select value={reminderMinutes} onChange={(e) => setReminderMinutes(Number(e.target.value))} className="flex-1 bg-transparent text-[12.5px] font-medium text-white outline-none">
-                {REMINDER_PRESETS.map((r) => <option key={r.minutes} value={r.minutes} className="text-[#12213b]">{r.label}</option>)}
-              </select>
-            </label>
-          </div>
-
-          <button disabled={saving || !title.trim()} onClick={() => void addEvent()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-violet-500 px-5 py-3.5 text-[13px] font-bold shadow-lg shadow-blue-900/30 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40">
-            <Save size={16} /> {saving ? 'Saving…' : 'Save Reminder'}
-          </button>
-          {message && <p className="mt-3 text-center text-[11px] text-blue-100/80">{message}</p>}
-        </section>
-
-        <section className="mt-7">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-[20px] font-bold tracking-[-0.02em] text-[#12213b]"><Clock3 size={20} /> Upcoming</h2>
-            <span className="text-[12px] font-semibold text-[#637796]">{upcoming.length} scheduled</span>
-          </div>
-          <div className="space-y-3">
-            {upcoming.length === 0 && <div className="rounded-[22px] border border-dashed border-[#d8e2ef] bg-white p-8 text-center text-[13px] text-[#7b8da7]">No upcoming calendar reminders.</div>}
-            {upcoming.map((event) => {
-              const urgent = event.reminderMinutes <= 60;
-              return (
-                <article key={event.id} className="flex items-center gap-3 rounded-[22px] border border-white bg-white p-4 shadow-[0_8px_28px_rgba(15,35,70,0.055)]">
-                  <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${urgent ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}><CalendarDays size={21} /></span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-[13.5px] font-bold text-[#12213b]">{event.title}</p>
-                      {urgent && <span className="rounded-full bg-red-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide text-red-500">Urgent</span>}
-                    </div>
-                    <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11.5px] text-[#7b8da7]">
-                      <CalendarDays size={12} /> {new Date(event.startsAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
-                      <span>•</span>
-                      <Clock3 size={12} /> {new Date(event.startsAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                      <span>•</span>
-                      {event.reminderMinutes === 0 ? 'At event' : `${event.reminderMinutes} min before`}
-                    </p>
-                  </div>
-                  {event.alarmEnabled && <CheckCircle2 size={18} className="shrink-0 text-emerald-500" />}
-                  <button onClick={() => void removeEvent(event)} aria-label={`Delete ${event.title}`} className="rounded-full p-2 text-[#9aa9bd] transition hover:bg-red-50 hover:text-red-500"><Trash2 size={15} /></button>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-
-        {!can('push-full') && (
-          <div className="mt-5 rounded-[18px] border border-[#dfe6f0] bg-white p-4 text-[11px] leading-[16px] text-[#71839f]">
-            <span className="font-semibold text-[#3c5478]">Pro</span> unlocks richer AI-generated schedules and advanced notification delivery.
-          </div>
-        )}
+          <aside className="space-y-4">
+            <section className="rounded-2xl bg-gradient-to-br from-[#12213b] to-[#272451] p-5 text-white shadow-[0_14px_38px_rgba(13,30,60,.16)]"><div className="flex items-center gap-2"><Sparkles size={17} className="text-violet-200" /><h3 className="text-[15px] font-bold">Smart planning</h3></div><p className="mt-2 text-[11px] leading-[17px] text-blue-100/70">Turn upcoming tender deadlines into preparation blocks without creating chat or extra admin.</p><button type="button" onClick={() => void buildPlan()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-white px-3 py-2.5 text-[11px] font-bold text-[#12213b]"><Sparkles size={14} /> Build prep plan</button></section>
+            <section className="rounded-2xl border border-white bg-white p-4 shadow-[0_8px_28px_rgba(15,35,70,.055)]"><div className="flex items-center justify-between"><h3 className="text-[14px] font-bold text-[#12213b]">Quick add</h3><Clock3 size={16} className="text-slate-400" /></div><div className="mt-3 grid grid-cols-2 gap-2">{([['Deadline','tender_deadline'],['Briefing','briefing'],['Site visit','site_visit'],['Meeting','meeting'],['Clarification','clarification'],['Follow-up','follow_up']] as Array<[string, CalendarEventType]>).map(([label, value]) => <button key={value} type="button" onClick={() => openNew(value)} className="rounded-xl border border-slate-200 px-2 py-2.5 text-left text-[10.5px] font-semibold text-slate-700 hover:bg-slate-50">{label}</button>)}</div></section>
+          </aside>
+        </div>
       </div>
+
+      {showForm && <div className="fixed inset-0 z-[70] flex items-end justify-center bg-[#071426]/55 p-0 sm:items-center sm:p-4"><div className="max-h-[92vh] w-full overflow-y-auto rounded-t-[24px] bg-white p-5 shadow-2xl sm:max-w-xl sm:rounded-[24px]"><div className="flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[.07em] text-blue-600">Calendar</p><h2 className="mt-1 text-[21px] font-bold text-[#12213b]">{editing ? 'Edit event' : 'Add business event'}</h2></div><button type="button" onClick={() => setShowForm(false)} className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100"><X size={18} /></button></div><div className="mt-5 grid gap-3"><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Event title" className="rounded-xl border border-slate-200 px-3.5 py-3 text-[13px] outline-none focus:border-blue-400" /><div className="grid grid-cols-2 gap-3"><select value={type} onChange={(e) => setType(e.target.value as CalendarEventType)} className="rounded-xl border border-slate-200 px-3 py-3 text-[12px]">{EVENT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select><select value={priority} onChange={(e) => setPriority(e.target.value as CalendarPriority)} className="rounded-xl border border-slate-200 px-3 py-3 text-[12px]">{PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label} priority</option>)}</select></div><div className="grid grid-cols-2 gap-3"><label className="text-[10px] font-semibold text-slate-500">Starts<input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-2.5 py-3 text-[11px]" /></label><label className="text-[10px] font-semibold text-slate-500">Ends<input type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-2.5 py-3 text-[11px]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-[11px]"><input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} /> All day</label><label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-[11px]"><input type="checkbox" checked={alarm} onChange={(e) => setAlarm(e.target.checked)} /> Phone alarm</label></div><div className="grid grid-cols-2 gap-3"><label className="text-[10px] font-semibold text-slate-500">Reminder<select value={reminder} onChange={(e) => setReminder(Number(e.target.value))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-[11px]">{REMINDER_PRESETS.map((r) => <option key={r.minutes} value={r.minutes}>{r.label}</option>)}</select></label><label className="text-[10px] font-semibold text-slate-500">Prep time<select value={prep} onChange={(e) => setPrep(Number(e.target.value))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-[11px]"><option value="0">No prep</option><option value="30">30 minutes</option><option value="60">1 hour</option><option value="120">2 hours</option><option value="240">4 hours</option><option value="480">8 hours</option></select></label></div><label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-[12px]"><MapPin size={16} className="text-slate-400" /><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Location or meeting link" className="min-w-0 flex-1 outline-none" /></label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Notes, agenda, questions or preparation checklist" className="rounded-xl border border-slate-200 px-3.5 py-3 text-[12px] outline-none" /></div><button type="button" disabled={saving || !title.trim()} onClick={() => void save()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#12213b] px-4 py-3.5 text-[12px] font-bold text-white disabled:opacity-50">{saving ? 'Saving…' : <><Check size={15} /> Save event</>}</button></div></div>}
     </main>
   );
 }
+
+function EventRow({ event, onEdit, onDelete, onComplete }: { event: CalendarEvent; onEdit: (event: CalendarEvent) => void; onDelete: (event: CalendarEvent) => void; onComplete: (event: CalendarEvent) => void }) {
+  const date = new Date(event.startsAt);
+  const completed = event.status === 'completed';
+  const overdue = !completed && date.getTime() < Date.now();
+  return <article className={`rounded-xl border p-3 ${overdue ? 'border-red-200 bg-red-50/50' : 'border-slate-100 bg-slate-50/45'}`}><div className="flex items-start gap-3"><div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${event.priority === 'critical' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}><CalendarDays size={17} /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><h4 className={`text-[12.5px] font-bold text-[#12213b] ${completed ? 'line-through opacity-60' : ''}`}>{event.title}</h4><span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-500">{eventLabel(event.eventType)}</span><span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${priorityClass(event.priority)}`}>{event.priority ?? 'medium'}</span></div><p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px] text-slate-500"><span>{event.allDay ? 'All day' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>{event.location && <><span>·</span><span className="inline-flex items-center gap-1"><MapPin size={11} />{event.location}</span></>}{overdue && <span className="font-bold text-red-600">· overdue</span>}</p>{event.notes && <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-[15px] text-slate-500">{event.notes}</p>}</div><div className="flex shrink-0 items-center gap-1"><button type="button" onClick={() => onComplete(event)} disabled={completed} aria-label="Complete event" className="flex h-8 w-8 items-center justify-center rounded-lg text-emerald-600 hover:bg-emerald-50 disabled:opacity-40"><Check size={15} /></button><button type="button" onClick={() => onEdit(event)} aria-label="Edit event" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-white"><Pencil size={14} /></button><button type="button" onClick={() => onDelete(event)} aria-label="Delete event" className="flex h-8 w-8 items-center justify-center rounded-lg text-red-500 hover:bg-red-50"><Trash2 size={14} /></button></div></div></article>;
+}
+function Empty() { return <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center"><CalendarDays size={22} className="mx-auto text-slate-300" /><p className="mt-2 text-[12px] font-semibold text-slate-500">No events planned</p><p className="mt-1 text-[10px] text-slate-400">Add a deadline, briefing, meeting or task.</p></div>; }
