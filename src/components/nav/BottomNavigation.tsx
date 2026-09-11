@@ -8,7 +8,6 @@ import { useSavedTenders } from '@/lib/saved-store';
 import { useDrawer } from '@/components/nav/DrawerProvider';
 import { useAlerts } from '@/lib/alerts-store';
 
-// Five destinations: frequent work stays visible; secondary tools live in More.
 const ITEMS = [
   { href: '/', label: 'Today', icon: Home },
   { href: '/search', label: 'Discover', icon: Search },
@@ -16,7 +15,6 @@ const ITEMS = [
   { href: '/saved', label: 'Saved', icon: Bookmark },
 ] as const;
 
-/** Persistent premium navigation on mobile; quiet rail on larger screens. */
 export function BottomNavigation() {
   const pathname = usePathname();
   const { toggle, isOpen } = useDrawer();
@@ -67,7 +65,6 @@ export function BottomNavigation() {
           onClick={toggle}
           aria-label={isOpen ? 'Close menu' : 'Open more menu'}
           aria-expanded={isOpen}
-          aria-controls="tenderbase-mobile-menu"
           className={cn(
             'relative flex min-h-[54px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-md px-2 text-[10px] font-medium text-ink-3 transition-all duration-200 active:scale-[.97] hover:bg-canvas hover:text-ink',
             'md:min-h-12 md:flex-none md:flex-row md:justify-start md:gap-3 md:px-3 md:text-body',
@@ -76,13 +73,13 @@ export function BottomNavigation() {
         >
           <span className="relative flex h-6 w-6 items-center justify-center">
             {isOpen ? <X size={21} strokeWidth={2} aria-hidden /> : <MoreHorizontal size={21} strokeWidth={1.8} aria-hidden />}
-            {!isOpen && unreadAlerts > 0 && <span className="absolute right-0 top-0 h-2 w-2 rounded-full bg-urgent" aria-label={`${unreadAlerts} unread alerts`} />}
+            {!isOpen && unreadAlerts > 0 && <span className="absolute right-0 top-0 h-2 w-2 rounded-full bg-urgent" aria-hidden />}
           </span>
           <span>{isOpen ? 'Close' : 'More'}</span>
         </button>
       </div>
 
-      <Link href={session.signedIn ? '/profile' : '/login'} className="mt-auto hidden items-center gap-3 rounded-lg border-t border-line px-3 pb-1 pt-5 md:flex">
+      <Link href={session.signedIn ? '/profile' : '/login'} className="mt-auto hidden items-center gap-3 rounded-lg border-t border-line px-3 pb-1 pt-5">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-navy text-[12px] font-semibold text-white">
           {session.signedIn ? (session.initials ?? 'U') : <User size={16} strokeWidth={2} aria-hidden />}
         </span>
