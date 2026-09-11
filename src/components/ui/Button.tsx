@@ -25,14 +25,15 @@ const SIZES: Record<Size, string> = {
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'primary', size = 'md', fullWidth = true, className, ...props },
+  { variant = 'primary', size = 'md', fullWidth = true, className, type, ...props },
   ref,
 ) {
   return (
     <button
       ref={ref}
+      type={type ?? 'button'}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-md font-semibold',
+        'inline-flex min-w-0 items-center justify-center gap-2 rounded-md font-semibold',
         'tracking-[-0.01em] transition-colors disabled:opacity-50',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/40 focus-visible:ring-offset-2',
         VARIANTS[variant],
