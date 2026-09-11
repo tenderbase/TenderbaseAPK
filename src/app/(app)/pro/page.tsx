@@ -1,17 +1,14 @@
 import type { Metadata } from 'next';
 
 import { billingStorageConfigured, fetchSubscription, payfastConfig } from '@/lib/billing.server';
-import { entitlementFromSubscription, type SubscriptionSnapshot } from '@/lib/entitlement';
+import type { SubscriptionSnapshot } from '@/lib/entitlement';
 import { createClient, getUser } from '@/lib/supabase-server';
+import { BidAnalystHero } from '@/components/pro/BidAnalystHero';
 import { ProHubView } from './ProHubView';
 
-export const metadata: Metadata = {
-  title: 'Pro · TenderBase',
-};
-
+export const metadata: Metadata = { title: 'Pro · TenderBase' };
 export const dynamic = 'force-dynamic';
 
-/** The Pro hub. The server decides whether PayFast checkout can actually run. */
 export default async function ProPage() {
   const config = payfastConfig();
   const user = await getUser();
@@ -33,13 +30,20 @@ export default async function ProPage() {
   const storageReady = billingStorageConfigured();
 
   return (
-    <ProHubView
-      billing={{
-        payfastReady: Boolean(config),
-        storageReady,
-        sandbox: config?.sandbox ?? false,
-        signedIn: Boolean(user),
-      }}
-    />
+    <>
+      <div className="px-5 pt-4 sm:px-6">
+        <div className="mx-auto max-w-6xl">
+          <BidAnalystHero />
+        </div>
+      </div>
+      <ProHubView
+        billing={{
+          payfastReady: Boolean(config),
+          storageReady,
+          sandbox: config?.sandbox ?? false,
+          signedIn: Boolean(user),
+        }}
+      />
+    </>
   );
 }
