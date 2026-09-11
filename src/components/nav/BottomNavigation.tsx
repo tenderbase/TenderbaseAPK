@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Search, Bookmark, KanbanSquare, MoreHorizontal, User } from 'lucide-react';
+import { Home, Search, Bookmark, KanbanSquare, MoreHorizontal, User, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useSavedTenders } from '@/lib/saved-store';
 import { useDrawer } from '@/components/nav/DrawerProvider';
@@ -19,7 +19,7 @@ const ITEMS = [
 /** Persistent premium navigation on mobile; quiet rail on larger screens. */
 export function BottomNavigation() {
   const pathname = usePathname();
-  const { toggle } = useDrawer();
+  const { toggle, isOpen } = useDrawer();
   const { saved, session } = useSavedTenders();
   const { unread: unreadAlerts } = useAlerts();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
@@ -65,17 +65,20 @@ export function BottomNavigation() {
         <button
           type="button"
           onClick={toggle}
-          aria-label="Open more"
+          aria-label={isOpen ? 'Close menu' : 'Open more menu'}
+          aria-expanded={isOpen}
+          aria-controls="tenderbase-mobile-menu"
           className={cn(
             'relative flex min-h-[54px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-md px-2 text-[10px] font-medium text-ink-3 transition-all duration-200 active:scale-[.97] hover:bg-canvas hover:text-ink',
             'md:min-h-12 md:flex-none md:flex-row md:justify-start md:gap-3 md:px-3 md:text-body',
+            isOpen && 'bg-blue-soft text-navy',
           )}
         >
           <span className="relative flex h-6 w-6 items-center justify-center">
-            <MoreHorizontal size={21} strokeWidth={1.8} aria-hidden />
-            {unreadAlerts > 0 && <span className="absolute right-0 top-0 h-2 w-2 rounded-full bg-urgent" aria-label={`${unreadAlerts} unread alerts`} />}
+            {isOpen ? <X size={21} strokeWidth={2} aria-hidden /> : <MoreHorizontal size={21} strokeWidth={1.8} aria-hidden />}
+            {!isOpen && unreadAlerts > 0 && <span className="absolute right-0 top-0 h-2 w-2 rounded-full bg-urgent" aria-label={`${unreadAlerts} unread alerts`} />}
           </span>
-          <span>More</span>
+          <span>{isOpen ? 'Close' : 'More'}</span>
         </button>
       </div>
 
