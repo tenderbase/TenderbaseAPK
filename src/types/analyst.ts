@@ -30,6 +30,33 @@ export interface FitAnalysis {
   engineVersion: string;
 }
 
+/**
+ * eTenders reality: tender/contract value is normally not published as a
+ * standard tender field. Missing value is therefore an expected state, not a
+ * scoring failure and never a negative fit signal.
+ */
+export type CommercialValueStatus =
+  | 'not_disclosed'
+  | 'published'
+  | 'document_evidence'
+  | 'inferred'
+  | 'unknown';
+
+export type CommercialConfidence = 'high' | 'medium' | 'low' | 'not_available';
+
+export type CommercialAttractiveness = 'high' | 'medium' | 'low' | 'not_assessable';
+
+export interface CommercialAnalysis {
+  valueStatus: CommercialValueStatus;
+  publishedValueCents: number | null;
+  contractPeriod: string | null;
+  pricingInformation: string | null;
+  budgetIndication: string | null;
+  attractiveness: CommercialAttractiveness;
+  confidence: CommercialConfidence;
+  notes: string[];
+}
+
 export type AnalysisStatus = 'queued' | 'processing' | 'complete' | 'failed';
 
 export type RequirementCategory =
@@ -96,6 +123,7 @@ export interface TenderAnalysis {
   eligibilitySummary: string | null;
   riskSummary: string | null;
   fit: FitAnalysis | null;
+  commercial: CommercialAnalysis | null;
   requirements: TenderRequirement[];
   risks: TenderRisk[];
   deadlines: TenderDeadline[];
@@ -122,6 +150,7 @@ export interface BidOpportunity {
   priority: BidPriority;
   fitScore: number | null;
   fitConfidence: FitConfidence | null;
+  /** User/company estimate only; never populated from an undisclosed tender value. */
   estimatedBidValueCents: number | null;
   winProbability: number | null;
   nextAction: string | null;
