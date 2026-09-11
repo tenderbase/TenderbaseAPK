@@ -31,7 +31,7 @@ async function withLiveFallback<T>(live: () => Promise<T>, fallback: (e: unknown
 
 export async function listTenders(opts: ListOptions = {}): Promise<TenderPage> {
   const query = buildApiQuery(opts);
-  return withLiveFallback(async () => {
+  return withLiveFallback<TenderPage>(async () => {
     let res = await tenderApiServer.list(query);
     if (isSuspiciouslyEmpty(res)) { const fresh = await tenderApiServer.list(query, { noStore: true }); if (!isSuspiciouslyEmpty(fresh)) res = fresh; }
     return { results: (res.results ?? []).map((t) => adaptTenderWithState(t)), total: res.total ?? res.results?.length ?? 0, page: res.page ?? query.page ?? 1, totalPages: res.totalPages ?? 1, source: 'live' as DataSource, via: 'server' as const };
