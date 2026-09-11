@@ -10,6 +10,7 @@ import { isAuthBypassed, isSupabaseConfigured } from '@/lib/supabase-config';
 import type { Tier } from '@/types/tier';
 
 const VALID: Tier[] = ['free', 'basic', 'pro'];
+const TEST_PRO_ENABLED = process.env.TENDERBASE_TEST_PRO === 'true';
 
 function isTier(v: string | undefined): v is Tier {
   return v !== undefined && (VALID as string[]).includes(v);
@@ -23,6 +24,10 @@ export interface ServerTier {
 
 /** Server-side tier resolution. */
 export async function getServerTier(): Promise<ServerTier> {
+  if (TEST_PRO_ENABLED) {
+    return { tier: 'pro', trialEnd: null, source: 'cookie' };
+  }
+
   try {
     const user = await getUser();
     if (user) {
