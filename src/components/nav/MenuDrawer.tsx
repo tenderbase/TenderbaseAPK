@@ -24,9 +24,7 @@ import { PlanChip } from '@/components/ui/PlanChip';
  * primary destinations, and the drawer holds the long tail (account, settings,
  * support) that has no room in a five-slot bar.
  *
- * Every entry points at a route that exists. Items whose screens are not built
- * yet are rendered as disabled with a "Soon" chip — a dead link that looks
- * live is worse than an honest one.
+ * Every interactive entry points at a real route or performs a real action.
  */
 
 interface Item {
@@ -34,8 +32,6 @@ interface Item {
   label: string;
   icon: LucideIcon;
   sub?: string;
-  /** Route not implemented yet — shown, but not clickable. */
-  soon?: boolean;
   badge?: number;
 }
 
@@ -53,8 +49,6 @@ const INTELLIGENCE: Item[] = [
 
 const ACCOUNT: Item[] = [
   { href: '/profile', label: 'Profile', icon: User },
-  // No subtitle: the company name lives in the profile itself and would go
-  // stale here the moment it is edited.
   { href: '/profile/company', label: 'Company profile', icon: Building2 },
   { href: '/profile/preferences', label: 'Tender preferences', icon: SlidersHorizontal },
   { href: '/profile/notifications', label: 'Notification settings', icon: Bell },
@@ -62,8 +56,8 @@ const ACCOUNT: Item[] = [
 ];
 
 const SUPPORT: Item[] = [
-  { href: '/settings', label: 'Help centre', icon: HelpCircle, soon: true },
-  { href: '/settings', label: 'Privacy & security', icon: ShieldCheck, soon: true },
+  { href: '/settings#help', label: 'Help centre', icon: HelpCircle },
+  { href: '/settings#privacy', label: 'Privacy & security', icon: ShieldCheck },
 ];
 
 export function MenuDrawer() {
@@ -78,13 +72,11 @@ export function MenuDrawer() {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
-  // Close on navigation — otherwise the drawer stays open over the new screen.
   useEffect(() => {
     close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  // Lock background scroll while open, and restore the exact previous value.
   useEffect(() => {
     if (!isOpen) return;
     const previous = document.body.style.overflow;
@@ -94,18 +86,15 @@ export function MenuDrawer() {
     };
   }, [isOpen]);
 
-  // Focus management: move focus in on open, restore it on close.
   useEffect(() => {
     if (isOpen) {
       previouslyFocused.current = document.activeElement as HTMLElement | null;
-      // Wait for the panel to be painted before focusing.
       const id = requestAnimationFrame(() => closeButtonRef.current?.focus());
       return () => cancelAnimationFrame(id);
     }
     previouslyFocused.current?.focus?.();
   }, [isOpen]);
 
-  // Escape to dismiss, and trap Tab inside the panel while open.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -138,12 +127,13 @@ export function MenuDrawer() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [isOpen, close]);
 
-  const isActive = (href: string) =>
-    href === '/' ? pathname === '/' : pathname.startsWith(href);
+  const isActive = (href: string) => {
+    const path = href.split('#')[0];
+    return path === '/' ? pathname === '/' : pathname.startsWith(path);
+  };
 
   return (
     <>
-      {/* Scrim. aria-hidden because the close button already exposes dismissal. */}
       <div
         aria-hidden
         onClick={close}
@@ -158,8 +148,6 @@ export function MenuDrawer() {
         role="dialog"
         aria-modal="true"
         aria-label="Menu"
-        // inert would be ideal but isn't in the React 18 types; hiding from the
-        // a11y tree while closed keeps links out of the tab order.
         aria-hidden={!isOpen}
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex w-[302px] max-w-[86%] flex-col bg-white shadow-2xl',
@@ -172,9 +160,7 @@ export function MenuDrawer() {
             <span className="block text-[19px] font-bold tracking-[-0.04em] text-navy">
               Tender<span className="font-medium text-ink-2">Base</span>
             </span>
-            <span className="mt-0.5 block text-caption text-ink-3">
-              South African tender intelligence
-            </span>
+            <span className="mt-0.5 block text-caption text-ink-3">South African tender intelligence</span>
           </div>
           <button
             ref={closeButtonRef}
@@ -187,7 +173,6 @@ export function MenuDrawer() {
           </button>
         </div>
 
-        {/* Account card — real identity from the session, honest for guests */}
         <Link
           href={session.signedIn ? '/profile' : '/login'}
           tabIndex={isOpen ? undefined : -1}
@@ -199,21 +184,13 @@ export function MenuDrawer() {
           <span className="min-w-0 flex-1">
             {session.signedIn ? (
               <>
-                <span className="block truncate text-[14.5px] font-semibold tracking-[-0.015em]">
-                  {session.name ?? 'Your account'}
-                </span>
-                <span className="mt-px block truncate text-caption text-ink-3">
-                  {session.email ?? 'Signed in'}
-                </span>
+                <span className="block truncate text-[14.5px] font-semibold tracking-[-0.015em]">{session.name ?? 'Your account'}</span>
+                <span className="mt-px block truncate text-caption text-ink-3">{session.email ?? 'Signed in'}</span>
               </>
             ) : (
               <>
-                <span className="block truncate text-[14.5px] font-semibold tracking-[-0.015em]">
-                  Sign in or create an account
-                </span>
-                <span className="mt-px block truncate text-caption text-ink-3">
-                  Save tenders, manage preferences — free
-                </span>
+                <span className="block truncate text-[14.5px] font-semibold tracking-[-0.015em]">Sign in or create an account</span>
+                <span className="mt-px block truncate text-caption text-ink-3">Save tenders, manage preferences — free</span>
               </>
             )}
           </span>
@@ -251,9 +228,7 @@ export function MenuDrawer() {
               <Crown size={17} strokeWidth={2.2} className="shrink-0" aria-hidden />
               <span className="min-w-0 flex-1">
                 <span className="block text-[13.5px] font-bold tracking-[-0.01em]">Go Pro</span>
-                <span className="block text-[10.5px] font-medium opacity-80">
-                  {tier === 'free' ? 'Free 14-day trial — no charge today' : 'Unlimited AI, matches & push'}
-                </span>
+                <span className="block text-[10.5px] font-medium opacity-80">{tier === 'free' ? 'Free 14-day trial — no charge today' : 'Unlimited AI, matches & push'}</span>
               </span>
             </button>
           )}
@@ -290,9 +265,7 @@ export function MenuDrawer() {
               className="flex w-full items-center gap-3 rounded-[11px] px-2.5 py-2.5 text-left text-urgent disabled:opacity-50"
             >
               <LogOut size={19} strokeWidth={1.9} aria-hidden />
-              <span className="text-[14.5px] font-semibold tracking-[-0.015em]">
-                {signingOut ? 'Signing out…' : 'Sign out'}
-              </span>
+              <span className="text-[14.5px] font-semibold tracking-[-0.015em]">{signingOut ? 'Signing out…' : 'Sign out'}</span>
             </button>
           )}
           <p className="px-2.5 pb-0.5 pt-1 text-[10.5px] text-ink-3">TenderBase v1.4.2</p>
@@ -315,37 +288,10 @@ function Section({
 }) {
   return (
     <div className="mb-1.5">
-      {title && (
-        <h2 className="mb-1 px-2.5 pt-2 text-micro font-semibold uppercase tracking-[0.07em] text-ink-3">
-          {title}
-        </h2>
-      )}
+      {title && <h2 className="mb-1 px-2.5 pt-2 text-micro font-semibold uppercase tracking-[0.07em] text-ink-3">{title}</h2>}
       <ul>
-        {items.map(({ href, label, icon: Icon, sub, soon, badge }) => {
-          const active = !soon && isActive(href);
-
-          if (soon) {
-            return (
-              <li key={label}>
-                <span
-                  aria-disabled="true"
-                  className="flex items-center gap-3 rounded-[11px] px-2.5 py-2.5 opacity-45"
-                >
-                  <Icon size={19} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14.5px] tracking-[-0.015em] text-ink">
-                      {label}
-                    </span>
-                    {sub && <span className="mt-px block truncate text-caption text-ink-3">{sub}</span>}
-                  </span>
-                  <span className="shrink-0 rounded-md bg-canvas px-1.5 py-0.5 text-[10px] font-semibold text-ink-3">
-                    Soon
-                  </span>
-                </span>
-              </li>
-            );
-          }
-
+        {items.map(({ href, label, icon: Icon, sub, badge }) => {
+          const active = isActive(href);
           return (
             <li key={label}>
               <Link
@@ -357,28 +303,12 @@ function Section({
                   active ? 'bg-blue-soft text-navy' : 'text-ink hover:bg-canvas',
                 )}
               >
-                <Icon
-                  size={19}
-                  strokeWidth={active ? 2.1 : 1.8}
-                  className={cn('shrink-0', active ? 'text-navy' : 'text-ink-2')}
-                  aria-hidden
-                />
+                <Icon size={19} strokeWidth={active ? 2.1 : 1.8} className={cn('shrink-0', active ? 'text-navy' : 'text-ink-2')} aria-hidden />
                 <span className="min-w-0 flex-1">
-                  <span
-                    className={cn(
-                      'block truncate text-[14.5px] tracking-[-0.015em]',
-                      active && 'font-semibold',
-                    )}
-                  >
-                    {label}
-                  </span>
+                  <span className={cn('block truncate text-[14.5px] tracking-[-0.015em]', active && 'font-semibold')}>{label}</span>
                   {sub && <span className="mt-px block truncate text-caption text-ink-3">{sub}</span>}
                 </span>
-                {badge ? (
-                  <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-lg bg-urgent px-1 text-[10px] font-bold text-white">
-                    {badge}
-                  </span>
-                ) : null}
+                {badge ? <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-lg bg-urgent px-1 text-[10px] font-bold text-white">{badge}</span> : null}
               </Link>
             </li>
           );
