@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { analyseOpportunity, rankOpportunities } from '@/lib/opportunities/score';
+import { analyseOpportunity, getCommercialAnalysis, rankOpportunities } from '@/lib/opportunities/score';
 
 function tender(overrides = {}) {
   return {
@@ -43,6 +43,25 @@ test('opportunity analysis preserves explainable match score and adds verified c
   assert.ok(fit.positives.some((s) => s.kind === 'province'));
   assert.ok(fit.positives.some((s) => s.kind === 'locality'));
   assert.ok(fit.positives.some((s) => s.kind === 'documents'));
+});
+
+test('undisclosed tender value is normal and never reduces fit score', () => {
+  const withNoValue = analyseOpportunity(tender({ valueCents: null }), { ...context, now: new Date('2026-09-10T12:00:00Z') });
+  const withPublishedValue = analyseOpportunity(tender({ valueCents: 250000000 }), { ...context, now: new Date('2026-09-10T12:00:00Z') });
+  const commercial = getCommercialAnalysis(tender({ valueCents: null }));
+
+  assert.equal(withNoValue.score, withPublishedValue.score);
+  assert.equal(commercial.valueStatus, 'not_disclosed');
+  assert.equal(commercial.publishedValueCents, null);
+  assert.equal(commercial.confidence, 'not_available');
+  assert.equal(commercial.attractiveness, 'not_assessable');
+});
+
+test('published tender value is represented separately from fit scoring', () => {
+  const commercial = getCommercialAnalysis(tender({ valueCents: 125000000 }));
+  assert.equal(commercial.valueStatus, 'published');
+  assert.equal(commercial.publishedValueCents, 125000000);
+  assert.equal(commercial.confidence, 'high');
 });
 
 test('deadline warning is generated without changing the underlying match score', () => {
