@@ -19,6 +19,7 @@ import { loadProfile } from '@/lib/company';
 import { fetchProfile } from '@/lib/company-remote';
 import { loadPreferences } from '@/lib/preferences';
 import { fetchPreferences } from '@/lib/preferences-remote';
+import { DEFAULT_PREFERENCES, preferencesEqual } from '@/types/preferences';
 import { scoreTender } from '@/lib/matches';
 import type { DataSource } from '@/lib/tenders';
 import type { SortOption, TenderWithUserState } from '@/types/tender';
@@ -47,6 +48,35 @@ export interface SearchViewProps {
   activeSort: SortOption;
 }
 
+/**
+ * Keep local matching context stable during auth/profile hydration.
+ *
+ * The app still supports localStorage-first use, while Supabase is the
+ * persistence layer. A common race was an older/empty remote row replacing a
+ * customised local preference set after the first paint, making a strong
+ * match banner appear and then disappear. Remote wins only when it contains
+ * actual user customisation, or when local state is still at defaults.
+ */
+function hasProfileData(profile: CompanyProfile | null): boolean {
+  if (!profile) return false;
+  return Boolean(
+    profile.legalName?.trim() ||
+    profile.tradingName?.trim() ||
+    profile.city?.trim() ||
+    profile.province?.trim() ||
+    profile.companyType ||
+    profile.registrationNumber?.trim() ||
+    profile.csdNumber?.trim() ||
+    profile.cidbGrading?.trim()
+  );
+}
+
+function shouldAdoptRemotePreferences(local: TenderPreferences, remote: TenderPreferences): boolean {
+  const localIsCustomised = !preferencesEqual(local, DEFAULT_PREFERENCES);
+  const remoteIsCustomised = !preferencesEqual(remote, DEFAULT_PREFERENCES);
+  return !localIsCustomised || remoteIsCustomised;
+}
+
 export function SearchView({ results, total, page, totalPages, source, notice, initialQuery, activeSort }: SearchViewProps) {
   const router = useRouter();
   const params = useSearchParams();
@@ -67,12 +97,30 @@ export function SearchView({ results, total, page, totalPages, source, notice, i
 
   useEffect(() => {
     let cancelled = false;
-    setProfile(loadProfile());
-    setPreferences(loadPreferences());
+    const localProfile = loadProfile();
+    const localPreferences = loadPreferences();
+
+    // Local state is available immediately and must not be invalidated by a
+    // late remote response. This prevents the match banner/card scores from
+    // changing underneath the user during initial page hydration.
+    setProfile(localProfile);
+    setPreferences(localPreferences);
+
     void Promise.all([fetchProfile(), fetchPreferences()]).then(([remoteProfile, remotePreferences]) => {
       if (cancelled) return;
-      if (remoteProfile) setProfile(remoteProfile);
-      if (remotePreferences) setPreferences(remotePreferences);
+
+      if (remoteProfile) {
+        // If local has real profile data but remote is effectively empty,
+        // retain the local profile. Otherwise the persisted remote profile is
+        // the authoritative newer source.
+        if (!hasProfileData(localProfile) || hasProfileData(remoteProfile)) {
+          setProfile(remoteProfile);
+        }
+      }
+
+      if (remotePreferences && shouldAdoptRemotePreferences(localPreferences, remotePreferences)) {
+        setPreferences(remotePreferences);
+      }
     });
     return () => { cancelled = true; };
   }, []);
