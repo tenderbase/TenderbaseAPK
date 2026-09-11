@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { ArrowUpRight, Bell, CalendarClock, CheckCircle2, ChevronRight, Clock3, FileSearch, Search, Sparkles, Target, TrendingUp, ShieldCheck } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { TenderWithUserState } from '@/types/tender';
 
 interface Props {
@@ -93,7 +94,7 @@ export function TodayExperience({ latest, closingSoon, stats, signedIn = false, 
   );
 }
 
-function DeskCard({icon,title,text,href}:{icon:React.ReactNode;title:string;text:string;href:string}) { return <Link href={href} className="tb-day-card"><span className="tb-day-icon">{icon}</span><span><strong>{title}</strong><small>{text}</small></span><ChevronRight size={16} className="ml-auto text-ink-3"/></Link> }
+function DeskCard({icon,title,text,href}:{icon:ReactNode;title:string;text:string;href:string}) { return <Link href={href} className="tb-day-card"><span className="tb-day-icon">{icon}</span><span><strong>{title}</strong><small>{text}</small></span><ChevronRight size={16} className="ml-auto text-ink-3"/></Link> }
 function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<17?'Good afternoon':'Good evening'}
 function formatDate(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return '—';return new Intl.DateTimeFormat('en-ZA',{day:'2-digit',month:'short'}).format(d)}
 function daysLabel(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return 'Verify';const days=Math.ceil((d.getTime()-Date.now())/86400000);if(days<0)return 'Closed';if(days===0)return 'Today';if(days===1)return 'Tomorrow';return `${days} days`}
