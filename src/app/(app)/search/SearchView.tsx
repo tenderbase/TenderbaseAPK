@@ -48,33 +48,16 @@ export interface SearchViewProps {
   activeSort: SortOption;
 }
 
-/**
- * Keep local matching context stable during auth/profile hydration.
- *
- * The app still supports localStorage-first use, while Supabase is the
- * persistence layer. A common race was an older/empty remote row replacing a
- * customised local preference set after the first paint, making a strong
- * match banner appear and then disappear. Remote wins only when it contains
- * actual user customisation, or when local state is still at defaults.
- */
-function hasProfileData(profile: CompanyProfile | null): boolean {
+function hasProfileMatchContext(profile: CompanyProfile | null): boolean {
   if (!profile) return false;
-  return Boolean(
-    profile.legalName?.trim() ||
-    profile.tradingName?.trim() ||
-    profile.city?.trim() ||
-    profile.province?.trim() ||
-    profile.companyType ||
-    profile.registrationNumber?.trim() ||
-    profile.csdNumber?.trim() ||
-    profile.cidbGrading?.trim()
-  );
+  return Boolean(profile.city?.trim() || profile.province?.trim() || profile.legalName?.trim());
 }
 
 function shouldAdoptRemotePreferences(local: TenderPreferences, remote: TenderPreferences): boolean {
-  const localIsCustomised = !preferencesEqual(local, DEFAULT_PREFERENCES);
-  const remoteIsCustomised = !preferencesEqual(remote, DEFAULT_PREFERENCES);
-  return !localIsCustomised || remoteIsCustomised;
+  // Search matching must not change after first paint because a remote row is
+  // newer. Local matching preferences are the stable client context. Remote
+  // preferences are only used when local storage is still at the app defaults.
+  return preferencesEqual(local, DEFAULT_PREFERENCES);
 }
 
 export function SearchView({ results, total, page, totalPages, source, notice, initialQuery, activeSort }: SearchViewProps) {
@@ -100,22 +83,17 @@ export function SearchView({ results, total, page, totalPages, source, notice, i
     const localProfile = loadProfile();
     const localPreferences = loadPreferences();
 
-    // Local state is available immediately and must not be invalidated by a
-    // late remote response. This prevents the match banner/card scores from
-    // changing underneath the user during initial page hydration.
     setProfile(localProfile);
     setPreferences(localPreferences);
 
     void Promise.all([fetchProfile(), fetchPreferences()]).then(([remoteProfile, remotePreferences]) => {
       if (cancelled) return;
 
-      if (remoteProfile) {
-        // If local has real profile data but remote is effectively empty,
-        // retain the local profile. Otherwise the persisted remote profile is
-        // the authoritative newer source.
-        if (!hasProfileData(localProfile) || hasProfileData(remoteProfile)) {
-          setProfile(remoteProfile);
-        }
+      // Only hydrate from Supabase when local storage has no useful matching
+      // context. Once local profile data exists, never replace it with a late
+      // remote snapshot; this is what was causing the banner to disappear.
+      if (remoteProfile && !hasProfileMatchContext(localProfile)) {
+        setProfile(remoteProfile);
       }
 
       if (remotePreferences && shouldAdoptRemotePreferences(localPreferences, remotePreferences)) {
