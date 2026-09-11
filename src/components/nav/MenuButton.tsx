@@ -14,7 +14,6 @@ export function MenuButton({ className }: { className?: string }) {
       onClick={toggle}
       aria-label={isOpen ? 'Close menu' : 'Open menu'}
       aria-expanded={isOpen}
-      aria-controls="tenderbase-navigation-drawer"
       aria-haspopup="dialog"
       className={cn(
         'flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[10px] bg-canvas text-ink',
