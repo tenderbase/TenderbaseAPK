@@ -7,24 +7,13 @@
  * A fallback that filtered differently from the primary path would show
  * different results for the same search, so the URL building lives here and
  * nowhere else.
- *
- * No `server-only`, no `fetch`, no fixtures — importing this from a Client
- * Component is safe.
  */
 
 import type { ApiSort, ApiTenderQuery } from '@/types/api';
 import type { SortOption } from '@/types/tender';
 
-/** The API rejects (or silently truncates) anything larger. */
 export const MAX_LIMIT = 100;
 
-/**
- * App sort -> API sort.
- *
- * `value_desc` cannot be honoured: `valueCents` is null across the whole feed,
- * so there is nothing to order by. It degrades to `latest` instead of sending a
- * value the API would ignore anyway.
- */
 export const SORT_MAP: Record<SortOption, ApiSort> = {
   closing_soon: 'closing',
   newest: 'latest',
@@ -33,20 +22,24 @@ export const SORT_MAP: Record<SortOption, ApiSort> = {
 
 export interface ListOptions {
   query?: string;
-  /** Verbatim upstream category, e.g. 'Supplies: Computer Equipment'. */
   category?: string;
-  /** Verbatim upstream province, e.g. 'KwaZulu-Natal'. */
   province?: string;
-  /** 'active' | 'complete' | 'cancelled'. */
   status?: string;
-  /** App-level window ('24h', '7d', '30d') — translated to closingAfter/Before. */
+  municipality?: string;
+  municipalityCode?: string;
+  procurementType?: string;
   closingWithin?: string;
   sort?: SortOption;
   page?: number;
   limit?: number;
 }
 
-/** '7d' -> 7, '24h' -> 1. Unknown or missing -> 7 days. */
+export type MunicipalityApiQuery = ApiTenderQuery & {
+  municipality?: string;
+  municipalityCode?: string;
+  procurementType?: string;
+};
+
 export function closingWithinDays(val?: string): number {
   if (!val) return 7;
   const n = parseInt(val, 10);
@@ -59,24 +52,17 @@ export function isoDaysFromNow(days: number, from = new Date()): string {
   return new Date(from.getTime() + days * 86_400_000).toISOString();
 }
 
-/**
- * Builds the upstream query.
- *
- * Two translations matter:
- *  - `closingWithin` does not exist upstream (verified ignored), so it becomes a
- *    `closingAfter`/`closingBefore` bracket around now.
- *  - `sort=closing` is ascending over ALL tenders including long-closed ones,
- *    so a closing-soon request must also push `closingAfter=now` or the first
- *    page is nothing but expired records.
- */
-export function buildApiQuery(opts: ListOptions, now = new Date()): ApiTenderQuery {
-  const query: ApiTenderQuery = {
+export function buildApiQuery(opts: ListOptions, now = new Date()): MunicipalityApiQuery {
+  const query: MunicipalityApiQuery = {
     page: Math.max(1, opts.page ?? 1),
     limit: opts.limit ?? 20,
     q: opts.query?.trim() || undefined,
     category: opts.category || undefined,
     province: opts.province || undefined,
     status: opts.status || undefined,
+    municipality: opts.municipality || undefined,
+    municipalityCode: opts.municipalityCode || undefined,
+    procurementType: opts.procurementType?.toUpperCase() || undefined,
     sort: SORT_MAP[opts.sort ?? 'newest'],
   };
 
@@ -90,7 +76,6 @@ export function buildApiQuery(opts: ListOptions, now = new Date()): ApiTenderQue
   return query;
 }
 
-/** Drops undefined/null/'' so optional filters never reach the wire as "undefined". */
 export function buildQuery(params: Record<string, unknown>): string {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -101,12 +86,6 @@ export function buildQuery(params: Record<string, unknown>): string {
   return s ? `?${s}` : '';
 }
 
-/**
- * `GET /tenders` path for a set of app-level list options.
- *
- * One function so the server client and the browser-direct client cannot drift:
- * both produce the same path, including the `limit` clamp.
- */
 export function tenderListPath(opts: ListOptions = {}, now = new Date()): string {
   const query = buildApiQuery(opts, now);
   const limit = Math.min(query.limit ?? 20, MAX_LIMIT);
